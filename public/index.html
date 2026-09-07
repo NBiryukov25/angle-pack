@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#172e28"><title>ANGLE PACK — Photo workspace</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
+<body>
+<header><a class="brand" href="/" aria-label="ANGLE PACK home"><span class="brand-icon">◩</span> ANGLE PACK</a><span class="header-note">ONE SESSION. MORE PERSPECTIVES.</span><span id="environment" class="badge">Loading…</span><button id="logout" hidden>Sign out</button></header>
+<main>
+<div class="intro"><div><p class="eyebrow">THE PHOTO WORKSPACE</p><h1>Explore another angle.</h1><p>Build a consistent set of photographs from the same session.</p></div><div class="session-control"><label for="sessions">Saved sessions</label><select id="sessions"><option value="">New session</option></select></div></div>
+<div id="error" role="alert" hidden></div>
+<div class="workspace">
+<aside>
+<section class="panel"><div class="section-heading"><h2>01 / Reference photos</h2><span id="ref-count">0 / 5</span></div>
+<label class="upload" id="drop-zone"><span class="upload-icon">＋</span><strong>Upload 1–5 photographs</strong><span>Choose files or drop them here</span><small>JPEG, PNG, WebP · up to 15 MB each</small><input id="upload" type="file" accept="image/jpeg,image/png,image/webp" multiple></label>
+<div id="references" class="references"></div><p class="hint">Use the same subject and photo session. Optional view labels help the automatic pack avoid repeated angles.</p></section>
+<section class="panel"><h2>02 / Operation</h2><div id="modes" class="modes">
+<button data-mode="CROP_ZOOM"><strong>Crop Zoom</strong><span>Frame existing pixels · no API cost</span></button>
+<button data-mode="OUTPAINT_ZOOM"><strong>Outpaint Zoom</strong><span>Reconstruct beyond the original edges</span></button>
+<button class="selected" data-mode="GENERATIVE_ANGLE"><strong>Generative Angle</strong><span>Move the virtual camera around the subject</span></button>
+</div><p id="mode-note" class="hint"></p></section>
+<section class="panel"><details><summary>Preservation <span class="small-badge">Consistency controls</span></summary><button id="preserve-all" class="secondary compact">PRESERVE ALL: HIGH</button><div id="preservation" class="preservation"></div></details><label for="notes" class="notes-label">Session instructions <span class="muted">(optional)</span></label><textarea id="notes" maxlength="2000" rows="3" placeholder="Details the references should establish together…"></textarea></section>
+</aside>
+<div class="work-area">
+<section class="panel pack-panel"><div class="section-heading"><div><p class="eyebrow">YOUR SHOT LIST</p><h2>03 / Angle pack</h2></div><button id="auto" class="secondary">✧ AUTO ANGLE PACK</button></div>
+<div class="count-row"><span>Number of outputs</span><div id="counts" class="segmented" aria-label="Number of outputs"></div></div>
+<div id="outputs" class="outputs"></div>
+<div class="submission"><div class="execution"><label for="execution">Generation mode</label><select id="execution"><option value="MOCK">MOCK — no API credits</option><option value="LIVE">LIVE — uses API credits</option></select><p id="cost-summary" class="hint"></p></div><button id="generate" class="primary">GENERATE 1 IMAGE ↗</button></div>
+<p class="limitation">Generative angles are plausible AI reconstructions, not mathematically exact views of the original scene.</p>
+</section>
+<section class="panel gallery-panel"><div class="section-heading"><div><p class="eyebrow">THE CONTACT SHEET</p><h2>04 / Results</h2></div><a id="manifest" hidden>Download manifest ↗</a></div>
+<div id="progress-area" hidden><div class="progress-line"><span id="progress-label" role="status" aria-live="polite"></span><span id="progress-count"></span></div><progress id="progress" max="5" value="0"></progress></div>
+<div id="gallery" class="gallery"><div class="empty"><div class="empty-frame">＋</div><h3>Your next perspective starts here.</h3><p>Add your references, choose a shot list, and generate.</p></div></div><p id="save-path" class="hint path"></p></section>
+</div></div>
+</main><footer>ANGLE PACK <span>Local photo workspace · originals retained · individual image revisions</span></footer>
+<dialog id="edit-dialog"><form id="edit-form"><div class="section-heading"><h2>Edit this output</h2><button type="button" id="close-dialog" aria-label="Close">✕</button></div><p id="edit-description" class="hint"></p><div id="edit-controls"></div><p id="edit-cost" class="hint"></p><button type="submit" class="primary">GENERATE THIS IMAGE</button></form></dialog>
+</body></html>
