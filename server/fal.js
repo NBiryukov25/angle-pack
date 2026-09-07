@@ -3,6 +3,47 @@ import sharp from 'sharp';
 
 export const MODELS = ['fal-ai/flux-2/edit', 'fal-ai/flux-2-pro/edit'];
 
+// Diagnostics inspect responses only, never request headers, bodies, or image buffers.
+function sanitizeText(value, config) {
+  let text=String(value);
+  for(const secret of [config.apiKey,config.password].filter(Boolean)) {
+    for(const encoded of new Set([secret,encodeURIComponent(secret)]))text=text.split(encoded).join('[REDACTED]');
+  }
+  // Drop credential-bearing prose rather than guessing where a secret ends.
+  if(/authorization|\b(?:bearer|password|passwd|secret|(?:access[_ -]?)?token|api[_ -]?key|fal_key|credentials?|cookies?|base64|image_data|image_urls)\b|data:image|-----BEGIN .*PRIVATE KEY/i.test(text))return '[REDACTED sensitive content]';
+  return text.replace(/https?:\/\/[^\s"<>]+/gi,'[URL omitted]')
+    .replace(/\b(?:sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]+/g,'[REDACTED]')
+    .replace(/[A-Za-z0-9+/_=-]{80,}/g,'[opaque data omitted]')
+    .replace(/[\x00-\x1f\x7f\x1b]/g,' ').slice(0,2000);
+}
+
+async function logHttpError(response,url,options,config) {
+  let body='[response body unavailable]';
+  try {
+    const copy=response.clone(), reader=copy.body?.getReader();
+    if(reader){let length=0,chunks=[];
+      while(true){const {done,value}=await reader.read();if(done)break;length+=value.length;if(length>65536){void reader.cancel().catch(()=>{});chunks=null;break;}chunks.push(value);}
+      if(!chunks)body='[response body exceeds diagnostic limit]';
+      else {
+        const raw=Buffer.concat(chunks).toString('utf8');
+        // Only diagnostic fields survive. Provider echoes of input, headers,
+        // passwords, image URLs and other arbitrary payload fields are omitted.
+        const clean=(value,depth=0)=>{
+          if(depth>6)return '[nested content omitted]';
+          if(typeof value==='string')return sanitizeText(value,config);
+          if(Array.isArray(value))return value.slice(0,10).map(v=>clean(v,depth+1));
+          if(value && typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([key])=>['error','message','detail','msg','code','type','status'].includes(key)).map(([key,v])=>[key,clean(v,depth+1)]));
+          return typeof value==='number'||typeof value==='boolean'?value:null;
+        };
+        try{body=clean(JSON.parse(raw));}catch{body=/^(text\/|application\/(json|problem\+json))/i.test(response.headers.get('content-type')||'')?sanitizeText(raw,config):'[non-text response omitted]';}
+      }
+    }
+  } catch { /* Logging must not replace the original HTTP failure. */ }
+  let endpoint='[endpoint unavailable]';try{const parsed=new URL(String(url));endpoint=sanitizeText(parsed.hostname+parsed.pathname,config);}catch{}
+  const ids={};for(const name of ['x-request-id','x-fal-request-id','x-error-id','x-fal-error-id','request-id']){const value=response.headers.get(name);if(value)ids[name]=sanitizeText(value,config);}
+  console.error('fal.ai HTTP error', {status:response.status,method:options?.method||'GET',endpoint,ids,body});
+}
+
 // FLUX.2 dev accepts at most four images. Preserve every view in a contact sheet.
 export async function packEvidence(buffers) {
   if (buffers.length <= 4) return {buffers, mapping:buffers.map((_,i)=>[i])};
@@ -22,8 +63,9 @@ export async function editImage(config,buffers,prompt,_mask,transport,onProgress
   if(config.mockOnly)throw new Error('Paid provider calls are disabled in mock mode.');
   if(!MODELS.includes(config.model))throw new Error('Unsupported FAL_IMAGE_MODEL.');
   const signal=AbortSignal.timeout(config.timeoutMs);
-  const network=transport?.fetch || fetch;
-  const client=transport ? null : createFalClient({credentials:config.apiKey,retry:{maxRetries:0},fetch:(url,options)=>fetch(url,{...options,signal})});
+  const rawNetwork=transport?.fetch || fetch;
+  const network=async(url,options={})=>{const response=await rawNetwork(url,options);if(!response.ok)await logHttpError(response,url,options,config);return response;};
+  const client=transport ? null : createFalClient({credentials:config.apiKey,retry:{maxRetries:0},fetch:(url,options)=>network(url,{...options,signal})});
   const upload=transport?.upload || (file=>client.storage.upload(file));
   const pause=transport?.sleep || (ms=>new Promise(resolve=>setTimeout(resolve,ms)));
   let requestId;
@@ -69,7 +111,7 @@ export async function editImage(config,buffers,prompt,_mask,transport,onProgress
     const buffer=await sharp(Buffer.concat(chunks),{limitInputPixels:40000000}).png().toBuffer();
     return {buffer,requestId,usage:null,returned:{provider:'fal.ai',model:config.model,seed:result.seed,timings:result.timings,inputMapping:evidence.mapping,inputCount:urls.length,prompt:input.prompt,image_size:input.image_size,num_images:1,enable_safety_checker:true,output_format:'png'}};
   } catch(error) {
-    const reason=signal.aborted?'Timed out; the job may still be running and billed.':error.status===401?'Authentication failed; check the server provider key.':error.status===422?'Image or parameters rejected by fal.ai.':error.status===429?'Rate limit or credit limit reached.':'Upload, queue, generation, or download failed.';
-    throw new Error(`fal.ai${error.status?` HTTP ${error.status}`:''}: ${reason} No automatic resubmission was made.${requestId?` Request ID: ${requestId}`:''}`);
+    const reason=signal.aborted?'Timed out; the job may still be running and billed.':error.status===401?'Authentication failed; check the server provider key.':error.status===403?'Access denied by fal.ai. Check the server key permissions and model access.':error.status===422?'Image or parameters rejected by fal.ai.':error.status===429?'Rate limit or credit limit reached.':'Upload, queue, generation, or download failed.';
+    throw new Error(`fal.ai${error.status?` HTTP ${error.status}`:''}: ${reason} No automatic resubmission was made.${requestId?` Request ID: ${sanitizeText(requestId,config)}`:''}`);
   }
 }
