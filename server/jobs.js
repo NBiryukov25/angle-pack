@@ -3,6 +3,8 @@ import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { buildPrompt } from './prompts.js';
+import { MODES } from '../public/presets.js';
+import { outputIssues } from './schema.js';
 import { normalizeReference, cropImage, outpaintInputs, mockImage, editImage, referenceBuffers } from './imaging.js';
 import { getModel } from './models.js';
 
@@ -36,6 +38,18 @@ export class JobStore {
   }
   // Outpaint sends the expanded canvas as an image input, so a text-only
   // endpoint would silently discard the very thing being extended.
+  // Reference-count rules need the uploaded files, so they live here rather
+  // than in the schema, which never sees them.
+  assertReferences(mode,outputs,count) {
+    const rules=MODES[mode];
+    if (count<rules.minReferences) throw Object.assign(new Error(`${rules.label} needs at least ${rules.minReferences} reference photograph${rules.minReferences>1?'s':''}.`),{status:400});
+    if (outputs.some(o=>o.sourceIndex>=count)) throw Object.assign(new Error('Selected reference does not exist.'),{status:400});
+    if (outputs.some(o=>o.attributes.some(a=>a.reference>=count))) throw Object.assign(new Error('An attribute names a reference photograph that was not uploaded.'),{status:400});
+    for (const output of outputs) {
+      const issues=outputIssues(mode,output);
+      if (issues.length) throw Object.assign(new Error(issues.join('; ')),{status:400});
+    }
+  }
   assertModels(mode,ids) {
     if (mode==='CROP_ZOOM') return;
     for (const id of ids) {
@@ -48,7 +62,7 @@ export class JobStore {
     this.assertLive(spec.execution,spec.mode);
     this.assertModels(spec.mode,[spec.model||this.config.model,...spec.outputs.map(o=>o.model).filter(Boolean)]);
     if (!files.length || files.length>5) throw Object.assign(new Error('Upload 1–5 reference photographs.'),{status:400});
-    if (spec.outputs.some(o => o.sourceIndex>=files.length)) throw Object.assign(new Error('Selected reference does not exist.'),{status:400});
+    this.assertReferences(spec.mode,spec.outputs,files.length);
     this.active=true;
     try {
       const normalized=[];
@@ -76,7 +90,7 @@ export class JobStore {
     if (!out) throw Object.assign(new Error('Output not found'),{status:404});
     this.assertLive(spec.execution,job.mode);
     this.assertModels(job.mode,[spec.output.model||job.config.model]);
-    if (spec.output.sourceIndex>=job.references.length) throw Object.assign(new Error('Reference not found'),{status:400});
+    this.assertReferences(job.mode,[spec.output],job.references.length);
     this.active=true;
     try {
       const {history,...previous}=out;
@@ -119,7 +133,7 @@ export class JobStore {
             const parameters={model:model.id,modelLabel:model.label,modelFamily:model.family,usesReferences:model.kind!=='text',size:job.config.size,quality:job.config.quality,n:1,output_format:'png',referenceCount:buffers.length,inputImageCount:model.kind==='text'?0:inputs.length,mask:false,promptGuidedOutpaint:!!mask};
             out.generationParameters={...parameters,apiRequests:job.execution==='LIVE'?1:0};
             await this.persist(job);
-            if (job.execution==='MOCK') buffer=await mockImage(buffers[out.sourceIndex],out,job.mode,job.config.size);
+            if (job.execution==='MOCK') buffer=await mockImage(buffers[out.sourceIndex],out,job.mode,job.config.size,model.label);
             else {
               const result=await editImage({...this.config,...job.config,model:model.id},inputs,out.prompt,mask,this.transport,async progress=>{out.providerProgress=progress.phase;if(progress.requestId)out.requestId=progress.requestId;await this.persist(job);});
               buffer=result.buffer;out.requestId=result.requestId;out.usage=result.usage;out.returnedParameters=result.returned;out.generationParameters.inputMapping=result.returned.inputMapping;out.generationParameters.inputImageCount=result.returned.inputCount;

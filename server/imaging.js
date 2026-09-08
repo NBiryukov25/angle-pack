@@ -32,9 +32,11 @@ export async function outpaintInputs(buffer, output, size) {
   const mask = await sharp(blank).composite([{input:opaque,left,top}]).png().toBuffer();
   return {canvas,mask,placement:{left,top,width:meta.width,height:meta.height,canvasWidth:width,canvasHeight:height}};
 }
-export async function mockImage(buffer, output, mode, size) {
+const escapeXml = value => String(value).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[c]));
+export async function mockImage(buffer, output, mode, size, modelLabel='') {
   const [width,height] = size.split('x').map(Number);
-  const label = `<svg width="${width}" height="${height}"><rect y="${height-150}" width="${width}" height="150" fill="#102722" fill-opacity="0.94"/><text x="40" y="${height-90}" fill="#b9f778" font-family="sans-serif" font-size="32">MOCK · NO AI RECONSTRUCTION</text><text x="40" y="${height-40}" fill="white" font-family="sans-serif" font-size="24">${mode} / ${output.angle} / ${output.framing}</text></svg>`;
+  const caption = escapeXml(`${mode} / ${output.angle} / ${output.framing}${modelLabel?` / ${modelLabel}`:''}`);
+  const label = `<svg width="${width}" height="${height}"><rect y="${height-150}" width="${width}" height="150" fill="#102722" fill-opacity="0.94"/><text x="40" y="${height-90}" fill="#b9f778" font-family="sans-serif" font-size="32">MOCK · NO AI RECONSTRUCTION</text><text x="40" y="${height-40}" fill="white" font-family="sans-serif" font-size="24">${caption}</text></svg>`;
   return sharp(buffer).resize(width,height,{fit:'contain',background:'#ddd9cd'}).composite([{input:Buffer.from(label)}]).png().toBuffer();
 }
 export { editImage } from './fal.js';
