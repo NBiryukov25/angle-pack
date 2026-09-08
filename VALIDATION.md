@@ -11,6 +11,56 @@ Validated locally on 2026-09-06 with Node 24.15.0. No paid fal.ai requests, prov
 - A later browser recheck after the session's sandbox change could not reach the local preview. Earlier successful browser checks remain valid; subsequent changes (manifest refresh, expired-session polling stop, upload helper) passed source/API tests. Physical iPhone Safari and deployed Render/GitHub Pages have not been tested.
 - Existing Joyce scripts and markup were preserved by automated comparison with Git HEAD. External paid services used by unrelated Joyce tools were not invoked.
 
+
+## Model selector, new modes and Model Comparison — 2026-09-08, Node v22.22.2
+
+No paid fal.ai request, provider upload or LIVE submission was made for this work.
+
+- `npm test`: 64 tests passed, zero failures (39 before this work began, all still passing).
+- `npm run check` and `node scripts/check-pages.js` against the checked-out joyce-photos-gallery: passed.
+- New automated coverage: every registry entry builds a payload matching its documented schema and cites its own API documentation URL; the default FLUX.2 payload is asserted field-for-field against the pre-existing behaviour; single-input endpoints receive one contact sheet holding every reference; text-to-image endpoints upload nothing; WAN's single-image result shape; PhotoMaker's ZIP archive is written, listed and integrity-tested with `unzip`; prompt trimming on paragraph boundaries; contact-sheet packing at every input cap without losing a view; per-session and per-output model choice reaching the right endpoint with distinct filenames; regeneration switching models; unknown models and text-only outpaint refused; each new mode's prompt, its reference and attribute rules, and identical prompts across a comparison; a failing model in a comparison leaving the others intact.
+- Cross-copy coverage: every element id the app addresses exists in its own markup, the two frontend copies expose the same ids and functions, and the browser's rule checks mirror the server's.
+- Browser verification in Chromium against the real page served by `scripts/preview-pages.js`: signed in, uploaded two references, walked all seven modes and recorded each mode note, cost line and validation state, confirmed Combined Images and Attribute Combine block submission until their rules are met and unblock afterwards, confirmed the model picker lists all ten entries grouped by family, confirmed Model Comparison prefills one model per family, and generated a three-output MOCK comparison whose results are each labelled with the model that produced them. Zero page errors.
+- Two defects were found and fixed during this work: `condense` charged a paragraph separator for the final paragraph and over-trimmed prompts, and the upload change handler read `event.target` after an `await`, by which point it is null, so the file input was never cleared and re-picking the same photograph did nothing. The second predates this work and affected both frontends.
+- `scripts/check-pages.js` was repaired. Its "unrelated portrait.html content preserved" check stripped the ANGLE PACK markup from the page and compared the remainder against Git HEAD; that became unsatisfiable once the integration was committed, because HEAD contains it. It now asserts that backend work leaves portrait.html byte-identical to HEAD.
+
+## Reference-input correctness — 2026-09-08, Node v22.22.2
+
+No paid fal.ai request, provider upload or LIVE submission was made for this work either.
+
+- `npm test`: 74 tests passed, zero failures (64 before, all still passing). `npm run check` and `check-pages.js` passed.
+- Three defects found by reviewing the branch before any live validation, each now fixed and covered:
+  - Outpaint Zoom sent the expanded canvas as a panel inside a contact sheet on the two single-input endpoints (fal-ai/qwen-image-edit and the WAN image-to-image model), so they would have been asked to extend a grid rather than the canvas. `packEvidence` now treats the first buffer as privileged when a canvas is present: it is never merged, a single-input endpoint receives it alone, and the omitted reference views are reported in the prompt and recorded in the manifest as `omittedInputs`. Verified for every edit model at input caps 1 through 4.
+  - Text-to-image endpoints received the full 2,332-character prompt about reference photographs that were never uploaded, opening "Treat ALL supplied reference photographs as evidence". `buildPrompt` now takes the resolved model's capability and returns a reference-free prompt for those endpoints, keeping the camera position, framing, direction and session notes and dropping the preservation controls and view labels that describe evidence they never receive.
+  - Outpaint Zoom was the only mode refusing text-only models. Multi-Reference, Combined Images and Attribute Combine are equally defined by the references, and now carry a `requiresReferenceInput` flag in the shared mode table. All four refuse a text-only model as the session model, as a per-output override, and on regeneration. Generative Angle and Model Comparison still permit one deliberately.
+- Browser verification in Chromium against the real page: selecting a text-to-image model in Multi-Reference, Combined Images or Outpaint Zoom names the offending output and disables GENERATE; switching back to an image model re-enables it; Generative Angle is unaffected. Zero page errors.
+- Still true after this round: only fal-ai/flux-2/edit has ever run against the paid API. The other eight models remain unvalidated live.
+
+## Surfacing the provider's own failure reason — 2026-09-08
+
+A first live LIVE attempt against the deployed Render service (main, 3a25c48)
+returned `fal.ai HTTP 422: Image or parameters rejected by fal.ai` with a request
+id, on Generative Angle / Rear / Three-quarter body at 1024x1536. Because the
+error carried a request id, the submission itself had succeeded: the job was
+queued, ran, and was rejected by fal on the result endpoint, so it may have been
+billed. Nothing in that payload is outside the documented bounds (1024x1536 sits
+inside the 512-2048 range, one reference is inside the four-image cap).
+
+The reason was unavailable to the operator. logHttpError sanitized the response
+body and wrote it to the server log only, so the browser showed a generic
+sentence and the manifest recorded nothing actionable. The adapter now returns
+that sanitized summary and appends it to the failure as "fal.ai said: ...", where
+it reaches the result card and the manifest.
+
+The original refusal to echo arbitrary upstream text is preserved and still
+tested: only a parsed JSON body qualifies, which clean() has already reduced to
+the whitelisted error/message/detail/msg/code/type/status fields. A plain-text or
+unreadable body is logged and never surfaced, credential-bearing text is dropped
+wholesale by the sanitizer, echoed prompts and image URLs never appear, and the
+surfaced text is capped at 300 characters.
+
+- `npm test`: 77 tests passed, zero failures (74 before). No paid request was made.
+
 ## Repeat
 
 ```powershell
@@ -25,4 +75,6 @@ Open http://127.0.0.1:8080/portrait.html → ANGLE PACK. Sign in with local-prev
 
 ## Limits still requiring a real deployment/test
 
-The production Render URL is intentionally a placeholder in the frontend config. Provider access, credit balance and generated-image quality require your explicit first LIVE test. Four-input FLUX.2 packing reduces detail in combined panels. Outpaint uses prompt-guided canvas extension, not a native mask API. Download results before temporary storage disappears. No claim of mathematically exact reconstruction or deterministic image reproduction is made.
+The production Render URL is intentionally a placeholder in the frontend config. Provider access, credit balance and generated-image quality require your explicit first LIVE test. Four-input FLUX.2 packing reduces detail in combined panels, and the same applies more strongly to single-input endpoints, which receive every reference as one sheet.
+
+Only the default fal-ai/flux-2/edit path has ever been exercised against the paid API. The eight other models are verified against their published input schemas and against fake transports; image quality, credit cost, latency and provider access for each remain unproven until you make one deliberate LIVE request per model. PhotoMaker's ZIP archive is checked with `unzip` locally but has not been accepted by the provider. The text-to-image endpoints (fal-ai/qwen-image and the WAN text-to-image model) never receive your reference photographs; they are offered for comparison and prompt-only work, not for identity preservation. Outpaint uses prompt-guided canvas extension, not a native mask API. Download results before temporary storage disappears. No claim of mathematically exact reconstruction or deterministic image reproduction is made.

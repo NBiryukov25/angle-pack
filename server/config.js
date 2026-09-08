@@ -1,6 +1,6 @@
 import path from 'node:path';
 import os from 'node:os';
-import { MODELS } from './fal.js';
+import { MODEL_IDS, DEFAULT_MODEL } from './models.js';
 import { fileURLToPath } from 'node:url';
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -13,10 +13,11 @@ export function getConfig(env = process.env) {
   const quality = 'standard';
   const size = env.FAL_IMAGE_SIZE || '1024x1536';
   if (!['1024x1024','1024x1536','1536x1024'].includes(size)) throw new Error('Invalid FAL_IMAGE_SIZE');
-  const model=env.FAL_IMAGE_MODEL || 'fal-ai/flux-2/edit';
-  if(!MODELS.includes(model))throw new Error('Unsupported FAL_IMAGE_MODEL; use fal-ai/flux-2/edit or fal-ai/flux-2-pro/edit.');
+  const model=env.FAL_IMAGE_MODEL || DEFAULT_MODEL;
+  if(!MODEL_IDS.includes(model))throw new Error(`Unsupported FAL_IMAGE_MODEL. Use one of: ${MODEL_IDS.join(', ')}`);
   return {
     production, authEnabled, password,
+    commit: (env.RENDER_GIT_COMMIT || env.SOURCE_COMMIT || '').trim(),
     host:production?'0.0.0.0':'127.0.0.1',
     mockOnly: process.argv.includes('--mock') || env.ANGLE_PACK_MOCK !== 'false',
     apiKey: env.FAL_KEY || '',

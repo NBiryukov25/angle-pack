@@ -6,6 +6,7 @@ import { root } from './config.js';
 import { JobStore } from './jobs.js';
 import { jobSchema, regenerateSchema } from './schema.js';
 import { createAuth } from './auth.js';
+import { modelCatalog } from './models.js';
 
 export async function createApp(config,transport) {
   const app=express(), store=new JobStore(config,transport), token=randomUUID();
@@ -26,7 +27,9 @@ export async function createApp(config,transport) {
     if(req.method==='OPTIONS')return res.sendStatus(204);
     next();
   });
-  app.get('/healthz',(req,res)=>res.json({status:'ok'}));
+  // Deployment identity only: the commit Render checked out. No configuration,
+  // no secrets, and nothing that is not already public in the repository.
+  app.get('/healthz',(req,res)=>res.json({status:'ok',commit:config.commit||'unknown'}));
   app.use((req,res,next)=>{
     const allowed=config.production ? true : /^((localhost|127\.0\.0\.1)(:\d+)?)$/.test(req.headers.host || '');
     if(!allowed)return res.status(403).json({error:'Host not allowed'});
@@ -46,7 +49,7 @@ export async function createApp(config,transport) {
   });
   app.post('/api/auth/logout',(req,res)=>auth.logout(req,res));
   const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:15*1024*1024,files:5,fields:1,fieldSize:32000}});
-  app.get('/api/config',(req,res)=>res.json({token:req.auth.token,authEnabled:config.authEnabled,hosted:config.production,mockOnly:config.mockOnly,liveAvailable:!config.mockOnly&&!!config.apiKey,model:config.model,size:config.size,quality:config.quality,dataDir:config.production?'temporary storage':config.dataDir}));
+  app.get('/api/config',(req,res)=>res.json({token:req.auth.token,authEnabled:config.authEnabled,hosted:config.production,mockOnly:config.mockOnly,liveAvailable:!config.mockOnly&&!!config.apiKey,model:config.model,models:modelCatalog(),size:config.size,quality:config.quality,dataDir:config.production?'temporary storage':config.dataDir}));
   let receiving=false;
   app.use(['/api/jobs','/api/sessions/:id/outputs/:index/regenerate'],(req,res,next)=>{
     if(req.method!=='POST')return next();

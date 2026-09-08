@@ -1,5 +1,7 @@
 # Exact commit files
 
+> Historical record of the original fal.ai / GitHub Pages migration, kept for reference. Both repositories have since been committed and pushed, so the file lists and the "nothing was committed" note below describe that one migration, not the current tree.
+
 No commits, pushes or deployments were performed for this architecture change. The backend already had its original files staged before this work; run the add command below to refresh those staged contents before committing.
 
 ## Joyce frontend repository
