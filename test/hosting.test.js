@@ -46,3 +46,13 @@ test('hosted mock generation and direct download work without disk or submission
 test('removed infrastructure is no longer required or present',async()=>{
   for(const file of ['render.yaml','.github/workflows/ci.yml','server/safeguards.js','scripts/password-hash.js'])await assert.rejects(access(file));
 });
+test('health reports the deployed commit and nothing else',async()=>{
+  const {app}=await createApp({...getConfig({RENDER:'true',APP_PASSWORD:password,FAL_KEY:'secret-api-test',RENDER_GIT_COMMIT:'1d4206620825c8b836e3334d49c7d26626fb5e2a'}),dataDir:await mkdtemp(path.join(os.tmpdir(),'angle-health-'))});
+  const health=await request(app).get('/healthz');
+  assert.equal(health.status,200);
+  assert.deepEqual(health.body,{status:'ok',commit:'1d4206620825c8b836e3334d49c7d26626fb5e2a'});
+  const serialized=JSON.stringify(health.body);
+  for(const secret of ['secret-api-test',password])assert.ok(!serialized.includes(secret));
+  const {app:local}=await createApp({...getConfig({}),dataDir:await mkdtemp(path.join(os.tmpdir(),'angle-health-local-'))});
+  assert.deepEqual((await request(local).get('/healthz')).body,{status:'ok',commit:'unknown'},'an unknown commit must not break the health check');
+});

@@ -17,6 +17,7 @@ export function getConfig(env = process.env) {
   if(!MODEL_IDS.includes(model))throw new Error(`Unsupported FAL_IMAGE_MODEL. Use one of: ${MODEL_IDS.join(', ')}`);
   return {
     production, authEnabled, password,
+    commit: (env.RENDER_GIT_COMMIT || env.SOURCE_COMMIT || '').trim(),
     host:production?'0.0.0.0':'127.0.0.1',
     mockOnly: process.argv.includes('--mock') || env.ANGLE_PACK_MOCK !== 'false',
     apiKey: env.FAL_KEY || '',

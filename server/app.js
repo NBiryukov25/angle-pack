@@ -27,7 +27,9 @@ export async function createApp(config,transport) {
     if(req.method==='OPTIONS')return res.sendStatus(204);
     next();
   });
-  app.get('/healthz',(req,res)=>res.json({status:'ok'}));
+  // Deployment identity only: the commit Render checked out. No configuration,
+  // no secrets, and nothing that is not already public in the repository.
+  app.get('/healthz',(req,res)=>res.json({status:'ok',commit:config.commit||'unknown'}));
   app.use((req,res,next)=>{
     const allowed=config.production ? true : /^((localhost|127\.0\.0\.1)(:\d+)?)$/.test(req.headers.host || '');
     if(!allowed)return res.status(403).json({error:'Host not allowed'});
