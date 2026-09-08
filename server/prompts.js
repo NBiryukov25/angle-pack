@@ -38,9 +38,22 @@ const operations = {
   ATTRIBUTE_COMBINE: 'ATTRIBUTE COMBINE: build ONE new photograph by taking each listed attribute from the reference named for it. The result must be a single plausible photograph, not a diagram, comparison or panel layout showing the sources.',
   MODEL_COMPARISON: 'MODEL COMPARISON: produce the photograph described here exactly as specified. Every output in this session receives an identical instruction and differs only in the model that renders it, so add no stylistic interpretation of your own.',
 };
-export function buildPrompt(job, output) {
+export function buildPrompt(job, output, {usesReferences = true} = {}) {
   const rules = MODES[job.mode] || {};
   const camera = output.angle === 'CUSTOM' ? output.custom : positions[output.angle];
+  const direction = job.mode !== 'GENERATIVE_ANGLE' && output.custom.trim() ? `Direction for this output: ${output.custom.trim()}` : '';
+  // A text-to-image endpoint receives no image at all. Every instruction about
+  // reference photographs, preservation and view labels would describe evidence
+  // it never gets, so it is replaced rather than merely ignored.
+  if (!usesReferences) return [
+    'No reference photograph is sent to this endpoint; it accepts a text description only. Produce ONE photograph from the description below alone. There is no established subject to match or preserve.',
+    rules.usesAngle ? `Camera position: ${camera}` : '',
+    `Requested framing: ${frames[output.framing]}`,
+    direction,
+    'Left/right mean the subject\'s own anatomical sides, not the viewer\'s screen sides.',
+    'Produce ONE photograph, without text, borders or comparison panels.',
+    job.notes ? `Additional session instructions: ${job.notes}` : '',
+  ].filter(Boolean).join('\n\n');
   const base = [
     ...(subjects[rules.subject] || subjects.same),
     operations[job.mode],
@@ -50,7 +63,7 @@ export function buildPrompt(job, output) {
       ? `Attribute sources: ${output.attributes.map(a => `${ATTRIBUTES[a.attribute]} from reference ${a.reference+1}`).join('; ')}. Take nothing else from those references.`
       : '',
     // For Generative Angle the free text IS the camera position, already stated above.
-    job.mode !== 'GENERATIVE_ANGLE' && output.custom.trim() ? `Direction for this output: ${output.custom.trim()}` : '',
+    direction,
     'Left/right mean the subject\'s own anatomical sides, not the viewer\'s screen sides.',
     ...Object.entries(job.preservation).map(([k,v]) => `PRESERVE_${k}: ${v}. ${v === 'HIGH' ? 'Strongly retain established characteristics; do not redesign because the camera moved.' : v === 'MEDIUM' ? 'Retain the recognizable overall appearance; allow small natural view-dependent differences.' : 'No extra preservation constraint for this attribute; maintain a coherent photograph.'}`),
     `${rules.subject === 'same' ? 'Preserve facial identity only where the face would naturally be visible. ' : ''}Background perspective, occlusion, highlights and shadows should change physically plausibly with the camera. Do not duplicate people, limbs, jewelry or furniture. Produce ONE photograph, without text, borders or comparison panels.`,

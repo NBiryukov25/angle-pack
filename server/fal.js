@@ -46,9 +46,17 @@ async function logHttpError(response,url,options,config) {
 
 // Endpoints cap how many separate image inputs they accept. Preserve every
 // supplied view by merging the surplus into one labelled contact sheet.
-export async function packEvidence(buffers, limit = 4) {
+//
+// `primary` marks the first buffer as the image the operation acts on rather
+// than evidence about it: an outpaint canvas is the thing being extended, so
+// burying it in a contact sheet would hand the endpoint a grid to extend. A
+// single-input endpoint therefore receives the canvas alone, and the omitted
+// reference views are reported so the caller can say so in the prompt and the
+// manifest instead of silently claiming they were sent.
+export async function packEvidence(buffers, limit = 4, primary = false) {
   if (!Number.isInteger(limit) || limit < 1) throw new Error('Invalid image input limit');
-  if (buffers.length <= limit) return {buffers, mapping:buffers.map((_,i)=>[i])};
+  if (buffers.length <= limit) return {buffers, mapping:buffers.map((_,i)=>[i]), omitted:[]};
+  if (primary && limit === 1) return {buffers:[buffers[0]], mapping:[[0]], omitted:buffers.slice(1).map((_,i)=>i+1)};
   const keep=limit-1, rest=buffers.slice(keep), tile=768, columns=Math.min(2,rest.length), rows=Math.ceil(rest.length/columns);
   const layers=[];
   for(let i=0;i<rest.length;i++) {
@@ -58,7 +66,7 @@ export async function packEvidence(buffers, limit = 4) {
     layers.push({input:label,left:(i%columns)*tile,top:Math.floor(i/columns)*tile});
   }
   const sheet=await sharp({create:{width:columns*tile,height:rows*tile,channels:3,background:'#808080'}}).composite(layers).png().toBuffer();
-  return {buffers:[...buffers.slice(0,keep),sheet],mapping:[...buffers.slice(0,keep).map((_,i)=>[i]),rest.map((_,i)=>i+keep)]};
+  return {buffers:[...buffers.slice(0,keep),sheet],mapping:[...buffers.slice(0,keep).map((_,i)=>[i]),rest.map((_,i)=>i+keep)],omitted:[]};
 }
 
 export async function editImage(config,buffers,prompt,_mask,transport,onProgress=async()=>{}) {
@@ -75,7 +83,7 @@ export async function editImage(config,buffers,prompt,_mask,transport,onProgress
     const prepared=_mask?[await sharp(buffers[0]).flatten({background:'#808080'}).png().toBuffer(),...buffers.slice(1)]:buffers;
     const [width,height]=config.size.split('x').map(Number);
     const text=model.promptLimit?condense(prompt,model.promptLimit):prompt;
-    const urls=[];let mapping=[],inputCount=0,input;
+    const urls=[];let mapping=[],inputCount=0,omitted=[],input;
     if(model.kind==='text') {
       // Documented as accepting no image input: the references are not uploaded.
       input=model.build({prompt:text,width,height,aspect:ASPECT[config.size]});
@@ -87,11 +95,14 @@ export async function editImage(config,buffers,prompt,_mask,transport,onProgress
       mapping=views.map((_,i)=>[i]);inputCount=views.length;
       input=model.build({prompt:text,archiveUrl,width,height,aspect:ASPECT[config.size]});
     } else {
-      const evidence=await packEvidence(prepared,model.maxImages);
+      const evidence=await packEvidence(prepared,model.maxImages,!!_mask);
       await onProgress({phase:'Uploading references to fal.ai'});
       for(let i=0;i<evidence.buffers.length;i++)urls.push(await upload(new File([evidence.buffers[i]],`view_${i+1}.png`,{type:'image/png'})));
-      mapping=evidence.mapping;inputCount=urls.length;
-      const instructions=evidence.mapping.some(m=>m.length>1)?' The last input is an evidence contact sheet: use every panel as a separate source view. Return ONE photograph, never a collage or panel labels.':'';
+      mapping=evidence.mapping;inputCount=urls.length;omitted=evidence.omitted;
+      // Never tell an endpoint to use views it did not receive.
+      const instructions=evidence.omitted.length
+        ?' This endpoint accepts one image, so only the expanded canvas was sent and no separate reference photographs were supplied. Reconstruct the empty margins from the canvas alone.'
+        :evidence.mapping.some(m=>m.length>1)?' The last input is an evidence contact sheet: use every panel as a separate source view. Return ONE photograph, never a collage or panel labels.':'';
       input=model.build({prompt:text+instructions,urls,width,height,aspect:ASPECT[config.size]});
     }
     // Native fetch performs exactly one submission. Never retry an ambiguous paid POST.
@@ -128,7 +139,7 @@ export async function editImage(config,buffers,prompt,_mask,transport,onProgress
     const chunks=[];let bytes=0;
     for await(const chunk of response.body){bytes+=chunk.length;if(bytes>50*1024*1024)throw new Error('Image too large');chunks.push(chunk);}
     const buffer=await sharp(Buffer.concat(chunks),{limitInputPixels:40000000}).png().toBuffer();
-    return {buffer,requestId,usage:null,returned:{provider:'fal.ai',model:model.id,modelLabel:model.label,modelKind:model.kind,seed:result.seed,timings:result.timings,inputMapping:mapping,inputCount,imagesReturned:images.length,prompt:input.prompt,requestedSize:model.sizing==='dimensions'?{width,height}:model.sizing==='aspect'?ASPECT[config.size]:'endpoint default',promptTruncated:text.length<prompt.length}};
+    return {buffer,requestId,usage:null,returned:{provider:'fal.ai',model:model.id,modelLabel:model.label,modelKind:model.kind,seed:result.seed,timings:result.timings,inputMapping:mapping,inputCount,omittedInputs:omitted,imagesReturned:images.length,prompt:input.prompt,requestedSize:model.sizing==='dimensions'?{width,height}:model.sizing==='aspect'?ASPECT[config.size]:'endpoint default',promptTruncated:text.length<prompt.length}};
   } catch(error) {
     const reason=signal.aborted?'Timed out; the job may still be running and billed.':error.status===401?'Authentication failed; check the server provider key.':error.status===403?'Access denied by fal.ai. Check the server key permissions and model access.':error.status===422?'Image or parameters rejected by fal.ai.':error.status===429?'Rate limit or credit limit reached.':'Upload, queue, generation, or download failed.';
     throw new Error(`fal.ai${error.status?` HTTP ${error.status}`:''}: ${reason} No automatic resubmission was made.${requestId?` Request ID: ${sanitizeText(requestId,config)}`:''}`);

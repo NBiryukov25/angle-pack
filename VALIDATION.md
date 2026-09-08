@@ -24,6 +24,18 @@ No paid fal.ai request, provider upload or LIVE submission was made for this wor
 - Two defects were found and fixed during this work: `condense` charged a paragraph separator for the final paragraph and over-trimmed prompts, and the upload change handler read `event.target` after an `await`, by which point it is null, so the file input was never cleared and re-picking the same photograph did nothing. The second predates this work and affected both frontends.
 - `scripts/check-pages.js` was repaired. Its "unrelated portrait.html content preserved" check stripped the ANGLE PACK markup from the page and compared the remainder against Git HEAD; that became unsatisfiable once the integration was committed, because HEAD contains it. It now asserts that backend work leaves portrait.html byte-identical to HEAD.
 
+## Reference-input correctness — 2026-09-08, Node v22.22.2
+
+No paid fal.ai request, provider upload or LIVE submission was made for this work either.
+
+- `npm test`: 74 tests passed, zero failures (64 before, all still passing). `npm run check` and `check-pages.js` passed.
+- Three defects found by reviewing the branch before any live validation, each now fixed and covered:
+  - Outpaint Zoom sent the expanded canvas as a panel inside a contact sheet on the two single-input endpoints (fal-ai/qwen-image-edit and the WAN image-to-image model), so they would have been asked to extend a grid rather than the canvas. `packEvidence` now treats the first buffer as privileged when a canvas is present: it is never merged, a single-input endpoint receives it alone, and the omitted reference views are reported in the prompt and recorded in the manifest as `omittedInputs`. Verified for every edit model at input caps 1 through 4.
+  - Text-to-image endpoints received the full 2,332-character prompt about reference photographs that were never uploaded, opening "Treat ALL supplied reference photographs as evidence". `buildPrompt` now takes the resolved model's capability and returns a reference-free prompt for those endpoints, keeping the camera position, framing, direction and session notes and dropping the preservation controls and view labels that describe evidence they never receive.
+  - Outpaint Zoom was the only mode refusing text-only models. Multi-Reference, Combined Images and Attribute Combine are equally defined by the references, and now carry a `requiresReferenceInput` flag in the shared mode table. All four refuse a text-only model as the session model, as a per-output override, and on regeneration. Generative Angle and Model Comparison still permit one deliberately.
+- Browser verification in Chromium against the real page: selecting a text-to-image model in Multi-Reference, Combined Images or Outpaint Zoom names the offending output and disables GENERATE; switching back to an image model re-enables it; Generative Angle is unaffected. Zero page errors.
+- Still true after this round: only fal-ai/flux-2/edit has ever run against the paid API. The other eight models remain unvalidated live.
+
 ## Repeat
 
 ```powershell

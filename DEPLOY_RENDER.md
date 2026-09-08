@@ -65,14 +65,24 @@ output-size control, and needs its class-word trigger in the prompt, which the
 adapter always supplies; its shorter prompt limit is applied by trimming on
 paragraph boundaries. The two text-to-image endpoints accept no image input at
 all: your references are never uploaded to them, the manifest records
-usesReferences false, and the browser marks them accordingly. They are refused
-for Outpaint Zoom, where discarding the expanded canvas would silently produce
-an unrelated picture.
+usesReferences false, and the browser marks them accordingly. They also receive
+a different, much shorter prompt, because the standard one is entirely about
+reference photographs they never get. They are refused outright for the four
+operations marked "reference input" in the table below, whose whole purpose is
+the reference photographs; the browser blocks the same combination before
+anything is submitted.
 
 Each endpoint caps how many separate images it accepts. Views beyond that cap
 are merged into one labelled contact sheet, so a single-input endpoint still
 receives every reference photograph; the manifest records the mapping. Contact
 sheet panels have reduced resolution, which can limit detail preservation.
+
+Outpaint Zoom is the exception. Its first input is the expanded canvas being
+extended, not evidence about it, so that canvas is never merged into a sheet. A
+single-input endpoint therefore receives the canvas alone; the omitted reference
+views are listed in the manifest as omittedInputs and the prompt says plainly
+that no separate references were sent, rather than instructing the model to use
+views it never received.
 
 Only the default FLUX.2 path has been exercised against the paid API. The other
 adapters are verified against the documented schemas and fake transports;
@@ -83,12 +93,17 @@ confirm each with one deliberate LIVE request before relying on it.
 | Mode | Provider calls | Needs |
 |---|---|---|
 | Crop Zoom | none, local Sharp crop | 1 reference |
-| Outpaint Zoom | 1 per output | 1 reference, a model that accepts image input |
+| Outpaint Zoom | 1 per output | 1 reference, reference input |
 | Generative Angle | 1 per output | 1 reference |
-| Multi-Reference | 1 per output | 2 references |
-| Combined Images | 1 per output | 2 references, a written direction per output |
-| Attribute Combine | 1 per output | 2 references, 2+ attribute sources per output |
+| Multi-Reference | 1 per output | 2 references, reference input |
+| Combined Images | 1 per output | 2 references, reference input, a written direction per output |
+| Attribute Combine | 1 per output | 2 references, reference input, 2+ attribute sources per output |
 | Model Comparison | 1 per output | 2+ different models across the outputs |
+
+"Reference input" means the operation is defined by the reference photographs,
+so a text-to-image endpoint is refused for it at submission and at
+regeneration. Generative Angle and Model Comparison permit one, since comparing
+a pure text-to-image result against the edit models is a fair question to ask.
 
 public/presets.js holds that table, shared byte-for-byte with the frontend, and
 the schema, the prompt builder and the browser controls all read it. Combined

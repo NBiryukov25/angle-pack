@@ -52,9 +52,10 @@ export class JobStore {
   }
   assertModels(mode,ids) {
     if (mode==='CROP_ZOOM') return;
+    const rules=MODES[mode];
     for (const id of ids) {
       const model=getModel(id);
-      if (mode==='OUTPAINT_ZOOM' && model.kind==='text') throw Object.assign(new Error(`${model.label} accepts no image input, so it cannot outpaint a canvas. Choose a model that uses your references.`),{status:400});
+      if (rules.requiresReferenceInput && model.kind==='text') throw Object.assign(new Error(`${model.label} accepts no image input, so it cannot perform ${rules.label}, which works from your reference photographs. Choose a model that uses them.`),{status:400});
     }
   }
   async create(spec,files) {
@@ -122,7 +123,7 @@ export class JobStore {
           } else {
             // Resolved here so an unknown saved model fails one output, not the session.
             const model=getModel(modelId);
-            out.prompt=buildPrompt(job,out);
+            out.prompt=buildPrompt(job,out,{usesReferences:model.kind!=='text'});
             let inputs=buffers,mask;
             if (job.mode==='OUTPAINT_ZOOM') {
               const padded=await outpaintInputs(buffers[out.sourceIndex],out,job.config.size);
