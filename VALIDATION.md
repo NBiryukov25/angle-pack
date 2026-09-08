@@ -36,6 +36,31 @@ No paid fal.ai request, provider upload or LIVE submission was made for this wor
 - Browser verification in Chromium against the real page: selecting a text-to-image model in Multi-Reference, Combined Images or Outpaint Zoom names the offending output and disables GENERATE; switching back to an image model re-enables it; Generative Angle is unaffected. Zero page errors.
 - Still true after this round: only fal-ai/flux-2/edit has ever run against the paid API. The other eight models remain unvalidated live.
 
+## Surfacing the provider's own failure reason — 2026-09-08
+
+A first live LIVE attempt against the deployed Render service (main, 3a25c48)
+returned `fal.ai HTTP 422: Image or parameters rejected by fal.ai` with a request
+id, on Generative Angle / Rear / Three-quarter body at 1024x1536. Because the
+error carried a request id, the submission itself had succeeded: the job was
+queued, ran, and was rejected by fal on the result endpoint, so it may have been
+billed. Nothing in that payload is outside the documented bounds (1024x1536 sits
+inside the 512-2048 range, one reference is inside the four-image cap).
+
+The reason was unavailable to the operator. logHttpError sanitized the response
+body and wrote it to the server log only, so the browser showed a generic
+sentence and the manifest recorded nothing actionable. The adapter now returns
+that sanitized summary and appends it to the failure as "fal.ai said: ...", where
+it reaches the result card and the manifest.
+
+The original refusal to echo arbitrary upstream text is preserved and still
+tested: only a parsed JSON body qualifies, which clean() has already reduced to
+the whitelisted error/message/detail/msg/code/type/status fields. A plain-text or
+unreadable body is logged and never surfaced, credential-bearing text is dropped
+wholesale by the sanitizer, echoed prompts and image URLs never appear, and the
+surfaced text is capped at 300 characters.
+
+- `npm test`: 77 tests passed, zero failures (74 before). No paid request was made.
+
 ## Repeat
 
 ```powershell

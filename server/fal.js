@@ -42,6 +42,25 @@ async function logHttpError(response,url,options,config) {
   let endpoint='[endpoint unavailable]';try{const parsed=new URL(String(url));endpoint=sanitizeText(parsed.hostname+parsed.pathname,config);}catch{}
   const ids={};for(const name of ['x-request-id','x-fal-request-id','x-error-id','x-fal-error-id','request-id']){const value=response.headers.get(name);if(value)ids[name]=sanitizeText(value,config);}
   console.error('fal.ai HTTP error', {status:response.status,method:options?.method||'GET',endpoint,ids,body});
+  return summarize(body);
+}
+
+// Reduce a sanitized diagnostic to one short line for the manifest and the UI.
+// Only a parsed JSON body qualifies: clean() has already reduced that to the
+// whitelisted error/message/detail/code fields. A plain-text or unknown body is
+// arbitrary upstream prose and is still never echoed back to the browser.
+function summarize(body) {
+  if (!body || typeof body !== 'object') return '';
+  const found=[];
+  const walk=(value,depth=0)=>{
+    if(depth>5 || found.length>=4)return;
+    if(typeof value==='string'){if(value.trim())found.push(value.trim());return;}
+    if(Array.isArray(value)){for(const item of value)walk(item,depth+1);return;}
+    if(value && typeof value==='object')for(const item of Object.values(value))walk(item,depth+1);
+  };
+  walk(body);
+  const text=[...new Set(found)].join(' · ').replace(/\s+/g,' ').trim();
+  return text.startsWith('[REDACTED') ? '' : text.slice(0,300);
 }
 
 // Endpoints cap how many separate image inputs they accept. Preserve every
@@ -74,11 +93,11 @@ export async function editImage(config,buffers,prompt,_mask,transport,onProgress
   const model=getModel(config.model);
   const signal=AbortSignal.timeout(config.timeoutMs);
   const rawNetwork=transport?.fetch || fetch;
-  const network=async(url,options={})=>{const response=await rawNetwork(url,options);if(!response.ok)await logHttpError(response,url,options,config);return response;};
+  let requestId,diagnostic='';
+  const network=async(url,options={})=>{const response=await rawNetwork(url,options);if(!response.ok)diagnostic=await logHttpError(response,url,options,config)||diagnostic;return response;};
   const client=transport ? null : createFalClient({credentials:config.apiKey,retry:{maxRetries:0},fetch:(url,options)=>network(url,{...options,signal})});
   const upload=transport?.upload || (file=>client.storage.upload(file));
   const pause=transport?.sleep || (ms=>new Promise(resolve=>setTimeout(resolve,ms)));
-  let requestId;
   try {
     const prepared=_mask?[await sharp(buffers[0]).flatten({background:'#808080'}).png().toBuffer(),...buffers.slice(1)]:buffers;
     const [width,height]=config.size.split('x').map(Number);
@@ -142,7 +161,9 @@ export async function editImage(config,buffers,prompt,_mask,transport,onProgress
     return {buffer,requestId,usage:null,returned:{provider:'fal.ai',model:model.id,modelLabel:model.label,modelKind:model.kind,seed:result.seed,timings:result.timings,inputMapping:mapping,inputCount,omittedInputs:omitted,imagesReturned:images.length,prompt:input.prompt,requestedSize:model.sizing==='dimensions'?{width,height}:model.sizing==='aspect'?ASPECT[config.size]:'endpoint default',promptTruncated:text.length<prompt.length}};
   } catch(error) {
     const reason=signal.aborted?'Timed out; the job may still be running and billed.':error.status===401?'Authentication failed; check the server provider key.':error.status===403?'Access denied by fal.ai. Check the server key permissions and model access.':error.status===422?'Image or parameters rejected by fal.ai.':error.status===429?'Rate limit or credit limit reached.':'Upload, queue, generation, or download failed.';
-    throw new Error(`fal.ai${error.status?` HTTP ${error.status}`:''}: ${reason} No automatic resubmission was made.${requestId?` Request ID: ${sanitizeText(requestId,config)}`:''}`);
+    // The provider's own explanation is the one thing that makes a 422 actionable.
+    const explained=diagnostic?sanitizeText(diagnostic,config):'';
+    throw new Error(`fal.ai${error.status?` HTTP ${error.status}`:''}: ${reason}${explained&&!explained.startsWith('[REDACTED')?` fal.ai said: ${explained}`:''} No automatic resubmission was made.${requestId?` Request ID: ${sanitizeText(requestId,config)}`:''}`);
   }
 }
 
