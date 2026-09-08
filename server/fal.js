@@ -1,7 +1,7 @@
 import { createFalClient } from '@fal-ai/client';
 import sharp from 'sharp';
-
-export const MODELS = ['fal-ai/flux-2/edit', 'fal-ai/flux-2-pro/edit'];
+import { ASPECT, getModel, resultImages } from './models.js';
+import { zipArchive } from './archive.js';
 
 // Diagnostics inspect responses only, never request headers, bodies, or image buffers.
 function sanitizeText(value, config) {
@@ -44,24 +44,26 @@ async function logHttpError(response,url,options,config) {
   console.error('fal.ai HTTP error', {status:response.status,method:options?.method||'GET',endpoint,ids,body});
 }
 
-// FLUX.2 dev accepts at most four images. Preserve every view in a contact sheet.
-export async function packEvidence(buffers) {
-  if (buffers.length <= 4) return {buffers, mapping:buffers.map((_,i)=>[i])};
-  const rest=buffers.slice(3), tile=768, columns=2, rows=Math.ceil(rest.length/columns);
+// Endpoints cap how many separate image inputs they accept. Preserve every
+// supplied view by merging the surplus into one labelled contact sheet.
+export async function packEvidence(buffers, limit = 4) {
+  if (!Number.isInteger(limit) || limit < 1) throw new Error('Invalid image input limit');
+  if (buffers.length <= limit) return {buffers, mapping:buffers.map((_,i)=>[i])};
+  const keep=limit-1, rest=buffers.slice(keep), tile=768, columns=Math.min(2,rest.length), rows=Math.ceil(rest.length/columns);
   const layers=[];
   for(let i=0;i<rest.length;i++) {
     const photo=await sharp(rest[i]).resize(tile,tile-40,{fit:'contain',background:'#808080'}).png().toBuffer();
     layers.push({input:photo,left:(i%columns)*tile,top:Math.floor(i/columns)*tile+40});
-    const label=Buffer.from(`<svg width="${tile}" height="40"><text x="12" y="28" font-size="24" fill="white">Input view ${i+4}</text></svg>`);
+    const label=Buffer.from(`<svg width="${tile}" height="40"><text x="12" y="28" font-size="24" fill="white">Input view ${i+keep+1}</text></svg>`);
     layers.push({input:label,left:(i%columns)*tile,top:Math.floor(i/columns)*tile});
   }
   const sheet=await sharp({create:{width:columns*tile,height:rows*tile,channels:3,background:'#808080'}}).composite(layers).png().toBuffer();
-  return {buffers:[...buffers.slice(0,3),sheet],mapping:[[0],[1],[2],rest.map((_,i)=>i+3)]};
+  return {buffers:[...buffers.slice(0,keep),sheet],mapping:[...buffers.slice(0,keep).map((_,i)=>[i]),rest.map((_,i)=>i+keep)]};
 }
 
 export async function editImage(config,buffers,prompt,_mask,transport,onProgress=async()=>{}) {
   if(config.mockOnly)throw new Error('Paid provider calls are disabled in mock mode.');
-  if(!MODELS.includes(config.model))throw new Error('Unsupported FAL_IMAGE_MODEL.');
+  const model=getModel(config.model);
   const signal=AbortSignal.timeout(config.timeoutMs);
   const rawNetwork=transport?.fetch || fetch;
   const network=async(url,options={})=>{const response=await rawNetwork(url,options);if(!response.ok)await logHttpError(response,url,options,config);return response;};
@@ -71,19 +73,34 @@ export async function editImage(config,buffers,prompt,_mask,transport,onProgress
   let requestId;
   try {
     const prepared=_mask?[await sharp(buffers[0]).flatten({background:'#808080'}).png().toBuffer(),...buffers.slice(1)]:buffers;
-    const evidence=await packEvidence(prepared), urls=[];
-    await onProgress({phase:'Uploading references to fal.ai'});
-    for(let i=0;i<evidence.buffers.length;i++)urls.push(await upload(new File([evidence.buffers[i]],`view_${i+1}.png`,{type:'image/png'})));
     const [width,height]=config.size.split('x').map(Number);
-    const instructions=evidence.mapping.some(m=>m.length>1)?' The last input is an evidence contact sheet: use every panel as a separate source view. Return ONE photograph, never a collage or panel labels.':'';
-    const input={prompt:prompt+instructions,image_urls:urls,image_size:{width,height},output_format:'png',enable_safety_checker:true,...(config.model==='fal-ai/flux-2/edit'?{num_images:1}:{})};
+    const text=model.promptLimit?condense(prompt,model.promptLimit):prompt;
+    const urls=[];let mapping=[],inputCount=0,input;
+    if(model.kind==='text') {
+      // Documented as accepting no image input: the references are not uploaded.
+      input=model.build({prompt:text,width,height,aspect:ASPECT[config.size]});
+    } else if(model.kind==='archive') {
+      await onProgress({phase:'Uploading reference archive to fal.ai'});
+      const views=prepared.slice(0,model.maxImages);
+      const archive=zipArchive(views.map((buffer,i)=>[`view_${i+1}.png`,buffer]));
+      const archiveUrl=await upload(new File([archive],'references.zip',{type:'application/zip'}));
+      mapping=views.map((_,i)=>[i]);inputCount=views.length;
+      input=model.build({prompt:text,archiveUrl,width,height,aspect:ASPECT[config.size]});
+    } else {
+      const evidence=await packEvidence(prepared,model.maxImages);
+      await onProgress({phase:'Uploading references to fal.ai'});
+      for(let i=0;i<evidence.buffers.length;i++)urls.push(await upload(new File([evidence.buffers[i]],`view_${i+1}.png`,{type:'image/png'})));
+      mapping=evidence.mapping;inputCount=urls.length;
+      const instructions=evidence.mapping.some(m=>m.length>1)?' The last input is an evidence contact sheet: use every panel as a separate source view. Return ONE photograph, never a collage or panel labels.':'';
+      input=model.build({prompt:text+instructions,urls,width,height,aspect:ASPECT[config.size]});
+    }
     // Native fetch performs exactly one submission. Never retry an ambiguous paid POST.
     const call=async(url,options={})=>{
       const response=await network(url,{...options,signal,headers:{Authorization:`Key ${config.apiKey}`,...options.headers}});
       if(!response.ok)throw Object.assign(new Error('Provider request failed'),{status:response.status});
       return response.json();
     };
-    const queued=await call(`https://queue.fal.run/${config.model}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});
+    const queued=await call(`https://queue.fal.run/${model.id}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});
     requestId=queued.request_id;
     const safeQueueUrl=url=>{const parsed=new URL(url);if(parsed.origin!=='https://queue.fal.run')throw new Error('Invalid queue URL');return parsed.href;};
     const statusUrl=safeQueueUrl(queued.status_url),resultUrl=safeQueueUrl(queued.response_url);
@@ -99,8 +116,10 @@ export async function editImage(config,buffers,prompt,_mask,transport,onProgress
     }
     const result=await call(resultUrl);
     if(result.has_nsfw_concepts?.some(Boolean))throw Object.assign(new Error('Image blocked by provider safety checks'),{status:422});
-    if(result.images?.length!==1)throw new Error('Expected one image');
-    const imageUrl=new URL(result.images[0].url);
+    // Endpoints differ: images:[…] for most, a single image:{…} for WAN.
+    const images=resultImages(model,result);
+    if(!images.length)throw new Error('Provider returned no image');
+    const imageUrl=new URL(images[0].url);
     if(imageUrl.protocol!=='https:' || !/(^|\.)(fal\.media|fal\.ai|fal\.run|fal\.space|storage\.googleapis\.com)$/.test(imageUrl.hostname))throw new Error('Unexpected result host');
     await onProgress({phase:'Downloading generated image',requestId});
     // Never attach provider credentials to image downloads.
@@ -109,9 +128,22 @@ export async function editImage(config,buffers,prompt,_mask,transport,onProgress
     const chunks=[];let bytes=0;
     for await(const chunk of response.body){bytes+=chunk.length;if(bytes>50*1024*1024)throw new Error('Image too large');chunks.push(chunk);}
     const buffer=await sharp(Buffer.concat(chunks),{limitInputPixels:40000000}).png().toBuffer();
-    return {buffer,requestId,usage:null,returned:{provider:'fal.ai',model:config.model,seed:result.seed,timings:result.timings,inputMapping:evidence.mapping,inputCount:urls.length,prompt:input.prompt,image_size:input.image_size,num_images:1,enable_safety_checker:true,output_format:'png'}};
+    return {buffer,requestId,usage:null,returned:{provider:'fal.ai',model:model.id,modelLabel:model.label,modelKind:model.kind,seed:result.seed,timings:result.timings,inputMapping:mapping,inputCount,imagesReturned:images.length,prompt:input.prompt,requestedSize:model.sizing==='dimensions'?{width,height}:model.sizing==='aspect'?ASPECT[config.size]:'endpoint default',promptTruncated:text.length<prompt.length}};
   } catch(error) {
     const reason=signal.aborted?'Timed out; the job may still be running and billed.':error.status===401?'Authentication failed; check the server provider key.':error.status===403?'Access denied by fal.ai. Check the server key permissions and model access.':error.status===422?'Image or parameters rejected by fal.ai.':error.status===429?'Rate limit or credit limit reached.':'Upload, queue, generation, or download failed.';
     throw new Error(`fal.ai${error.status?` HTTP ${error.status}`:''}: ${reason} No automatic resubmission was made.${requestId?` Request ID: ${sanitizeText(requestId,config)}`:''}`);
   }
+}
+
+// Some endpoints document short prompt limits. Trim on paragraph boundaries so
+// a truncated prompt still ends in a complete instruction.
+export function condense(prompt,limit) {
+  if(prompt.length<=limit)return prompt;
+  const kept=[];let used=0;
+  for(const paragraph of prompt.split('\n\n')) {
+    const next=used?used+2+paragraph.length:paragraph.length;
+    if(next>limit)break;
+    kept.push(paragraph);used=next;
+  }
+  return kept.length?kept.join('\n\n'):prompt.slice(0,limit);
 }

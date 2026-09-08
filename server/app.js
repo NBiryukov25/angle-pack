@@ -6,6 +6,7 @@ import { root } from './config.js';
 import { JobStore } from './jobs.js';
 import { jobSchema, regenerateSchema } from './schema.js';
 import { createAuth } from './auth.js';
+import { modelCatalog } from './models.js';
 
 export async function createApp(config,transport) {
   const app=express(), store=new JobStore(config,transport), token=randomUUID();
@@ -46,7 +47,7 @@ export async function createApp(config,transport) {
   });
   app.post('/api/auth/logout',(req,res)=>auth.logout(req,res));
   const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:15*1024*1024,files:5,fields:1,fieldSize:32000}});
-  app.get('/api/config',(req,res)=>res.json({token:req.auth.token,authEnabled:config.authEnabled,hosted:config.production,mockOnly:config.mockOnly,liveAvailable:!config.mockOnly&&!!config.apiKey,model:config.model,size:config.size,quality:config.quality,dataDir:config.production?'temporary storage':config.dataDir}));
+  app.get('/api/config',(req,res)=>res.json({token:req.auth.token,authEnabled:config.authEnabled,hosted:config.production,mockOnly:config.mockOnly,liveAvailable:!config.mockOnly&&!!config.apiKey,model:config.model,models:modelCatalog(),size:config.size,quality:config.quality,dataDir:config.production?'temporary storage':config.dataDir}));
   let receiving=false;
   app.use(['/api/jobs','/api/sessions/:id/outputs/:index/regenerate'],(req,res,next)=>{
     if(req.method!=='POST')return next();
