@@ -78,7 +78,9 @@ export class JobStore {
         const meta=await sharp(normalized[i]).metadata();
         references.push({originalName:files[i].originalname,originalFile,normalizedFile,sha256:createHash('sha256').update(files[i].buffer).digest('hex'),width:meta.width,height:meta.height,angle:spec.referenceAngles[i] || 'UNKNOWN'});
       }
-      const job={schemaVersion:1,id,createdAt:now(),...spec,references,config:{provider:'fal.ai',model:spec.model||this.config.model,size:this.config.size,quality:this.config.quality,endpoint:this.config.endpoint},status:'queued',limitation:'AI camera angles are plausible reconstructions, not exact scene geometry. Identical inputs do not guarantee identical outputs.',outputs:spec.outputs.map((o,i)=>({...o,index:i,status:'queued',history:[]}))};
+      const models=spec.outputs.map(o=>getModel(o.model||spec.model||this.config.model));
+      const job={schemaVersion:1,id,createdAt:now(),...spec,references,
+        ...(spec.mode==='MODEL_COMPARISON'?{comparison:models.map((m,i)=>({output:i+1,model:m.id,label:m.label,family:m.family,usesReferences:m.kind!=='text'}))}:{}),config:{provider:'fal.ai',model:spec.model||this.config.model,size:this.config.size,quality:this.config.quality,endpoint:this.config.endpoint},status:'queued',limitation:'AI camera angles are plausible reconstructions, not exact scene geometry. Identical inputs do not guarantee identical outputs.',outputs:spec.outputs.map((o,i)=>({...o,index:i,status:'queued',history:[]}))};
       await this.persist(job); this.jobs.set(id,job);
       this.run(job,job.outputs.map((_,i)=>i)).catch(()=>{});
       return job;
@@ -109,7 +111,7 @@ export class JobStore {
         out.mode=job.mode;out.preservation={...job.preservation};
         // An output may override the session model; CROP_ZOOM never uses one.
         const modelId=job.mode==='CROP_ZOOM'?null:out.model||job.config.model;
-        const variant=out.model&&out.model!==job.config.model?`_${modelSlug(out.model)}`:'';
+        const variant=modelId&&(job.mode==='MODEL_COMPARISON'||out.model&&out.model!==job.config.model)?`_${modelSlug(modelId)}`:'';
         out.generatedFilename=`${job.execution==='MOCK' && job.mode!=='CROP_ZOOM' ? 'mock_' : ''}angle_${String(index+1).padStart(2,'0')}_${job.mode==='GENERATIVE_ANGLE' ? out.angle.toLowerCase() : 'source'}_${out.framing.toLowerCase()}${variant}${out.history.length ? `_v${out.history.length+1}` : ''}.png`;
         await this.persist(job);
         try {

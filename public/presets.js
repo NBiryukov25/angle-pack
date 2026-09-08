@@ -46,6 +46,12 @@ export function autoPack(count, represented = []) {
   for (const k of ranked) if (!used.has(families(k))) { chosen.push(k); used.add(families(k)); if (chosen.length === count) break; }
   return chosen.map(angle => ({ angle, framing: ['HIGH','LOW','REAR_3Q_LEFT','REAR_3Q_RIGHT','REAR'].includes(angle) ? 'FULL_BODY' : 'THREE_QUARTER', custom: '', sourceIndex: 0 }));
 }
+// Model Comparison: one shot list entry per model, identical in every other
+// respect so the only variable left is the model that renders it.
+export function comparisonPack(models, base = {}) {
+  const shared = { angle: 'LEFT_3Q', framing: 'THREE_QUARTER', custom: '', sourceIndex: 0, expansion: 1.6, attributes: [], ...base };
+  return [...new Set(models)].slice(0, 5).map(model => ({ ...shared, model }));
+}
 export function defaultCrop(framing) {
   const sizes = { FACE: [.34,.23], HEAD_SHOULDERS: [.56,.36], CHEST: [.68,.48], WAIST: [.8,.62], THREE_QUARTER: [.9,.82], FULL_BODY: [1,1], WIDE: [1,1] };
   const [w,h] = sizes[framing]; return { x: (1-w)/2, y: h === 1 ? 0 : .03, w, h };
