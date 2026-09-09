@@ -124,8 +124,10 @@ export class JobStore {
             // Resolved here so an unknown saved model fails one output, not the session.
             const model=getModel(modelId);
             const usesReferences=model.kind!=='text';
-            // A model with a documented prompt limit gets the compact form.
-            out.prompt=buildPrompt(job,out,{usesReferences,compact:!!model.promptLimit});
+            // Stage A2: the compact enforcement prompt is the production path.
+            // The full prompt exceeds FLUX.2's 512-token encoder cap by roughly
+            // 3.5x, so most of it was discarded before the model saw it.
+            out.prompt=buildPrompt(job,out,{usesReferences,compact:true,limit:model.promptLimit||0});
             out.negativePrompt=model.negative?buildNegativePrompt(job,{usesReferences}):null;
             let inputs=buffers,mask;
             if (job.mode==='OUTPAINT_ZOOM') {

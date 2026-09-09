@@ -149,25 +149,70 @@ function preservationLedger(job) {
   });
 }
 
-// Endpoints with a short prompt limit get a purpose-built compact prompt rather
-// than a truncated long one: blind truncation drops whichever instruction
-// happens to fall past the limit, which is how PhotoMaker lost either its
-// camera move or its identity lock depending on ordering.
-function compactPrompt(job, output, rules) {
-  const spec = output.angle === 'CUSTOM' ? {move: output.custom} : CAMERA[output.angle] || {move: ''};
-  const source = job.referenceAngles?.[output.sourceIndex] || job.referenceAngles?.[0] || 'UNKNOWN';
-  const moved = rules.usesAngle && (source === 'UNKNOWN' || source !== output.angle);
-  return [
-    rules.usesAngle ? `Camera position: ${spec.move}` : 'Keep the source camera angle.',
-    moved ? 'The output must NOT reproduce the reference viewpoint, and must not be a crop, mirror or warp of it.' : '',
-    'Keep the SAME person as the reference: same face shape, eye shape, nose, lips, jawline, skin tone, hair and body proportions, same apparent age and ethnicity. Do not beautify, smooth, slim or make them younger.',
-    'Keep the SAME clothing as constructed: same cut, sleeve length, neckline, waist and hem. Do not redesign or restyle it.',
-    `Framing: ${frames[output.framing]}`,
-    job.notes ? `Also: ${job.notes}` : '',
-  ].filter(Boolean).join('\n\n');
+// The enforcement prompt the production path actually sends.
+//
+// The full prompt below is ~7,150 characters, roughly 1,800 tokens. FLUX.2's
+// pipeline caps the text encoder at 512 tokens, so about 70% of it — the
+// garment lock, the beautification ban, the preservation ledger and the final
+// check — was discarded before the model ever saw it. Length was not strength.
+//
+// This carries the same five obligations in a fraction of the budget: the
+// camera move, the identity lock, the garment lock, the preservation controls
+// that are actually set, and a closing camera check. Blocks are ordered by
+// priority and, when an endpoint documents a tighter limit, the lowest-priority
+// blocks are dropped rather than the text being blindly truncated. The camera,
+// identity and garment blocks are never droppable.
+const compactIdentity = {
+  same: 'SAME PERSON as the reference, exactly: face shape and proportions, eye shape and spacing, eyebrows, nose, lips, jawline, chin, ears, hairline and hair, skin tone and every mark, apparent age, ethnicity, body proportions. Do not beautify, smooth, slim, symmetrise, or change age or ethnicity.',
+  distinct: 'Each reference keeps its OWN subject exactly: its own face, skin tone, age, hair and proportions. Do not blend faces between them or beautify any of them.',
+  attributes: 'Take each assigned attribute exactly from its named reference: that face shape, eye shape, nose, lips, jawline, skin tone, hair and proportions. Do not beautify or idealise them.',
+};
+const compactGarment = 'SAME CLOTHING as the reference, as constructed: same cut, sleeve length, neckline, shoulder line, waist, hem, closures, pattern, fabric and colour. Do not redesign, restyle, or add or remove sleeves.';
+
+function compactLedger(job) {
+  const byLevel = {HIGH: [], MEDIUM: []};
+  for (const [key, value] of Object.entries(job.preservation)) if (byLevel[value]) byLevel[value].push(key);
+  const lines = [];
+  if (byLevel.HIGH.length) lines.push(`Binding: ${byLevel.HIGH.join(', ')}.`);
+  if (byLevel.MEDIUM.length) lines.push(`Keep recognisable: ${byLevel.MEDIUM.join(', ')}.`);
+  return lines.length ? `${lines.join(' ')} Identity and clothing must not change; perspective, occlusion and shadows must change with the camera.` : '';
 }
 
-export function buildPrompt(job, output, {usesReferences = true, compact = false} = {}) {
+function compactPrompt(job, output, rules, limit) {
+  const kind = rules.subject || 'same';
+  const spec = output.angle === 'CUSTOM' ? {move: output.custom, evidence: ''} : CAMERA[output.angle] || {move: '', evidence: ''};
+  const source = job.referenceAngles?.[output.sourceIndex] || job.referenceAngles?.[0] || 'UNKNOWN';
+  const moved = rules.usesAngle && (source === 'UNKNOWN' || source !== output.angle);
+  const direction = job.mode !== 'GENERATIVE_ANGLE' && output.custom.trim() ? `Direction: ${output.custom.trim()}` : '';
+  const attributes = job.mode === 'ATTRIBUTE_COMBINE' && output.attributes.length
+    ? `Attribute sources: ${output.attributes.map(a => `${ATTRIBUTES[a.attribute]} from reference ${a.reference+1}`).join('; ')}.`
+    : '';
+  // [text, droppable] — dropped from the end when a tighter limit applies.
+  const blocks = [
+    [rules.usesAngle ? `Camera position: ${spec.move}` : 'Keep the source camera angle; only move the framing outward.', false],
+    [moved ? 'Do NOT reproduce the reference viewpoint, and do not fake the move by cropping, mirroring, rotating or warping it.' : '', false],
+    [compactIdentity[kind], false],
+    [compactGarment, false],
+    [kind === 'same' ? 'Same person, same clothes, same place, same photo session; only the camera has moved. Not a lookalike and not a restyle.' : '', true],
+    [attributes, true],
+    [rules.usesAngle && spec.evidence ? `Evidence the camera moved: ${spec.evidence}` : '', true],
+    [compactLedger(job), true],
+    [`Framing: ${frames[output.framing]}`, true],
+    [direction, true],
+    [job.notes ? `Notes (must not change the camera, the identity or the clothing): ${job.notes}` : '', true],
+    [rules.usesAngle ? `FINAL CHECK: camera actually moved as instructed; same individual, un-beautified; same garment construction.` : '', false],
+  ].filter(([text]) => text);
+  const join = list => list.map(([text]) => text).join('\n\n');
+  let kept = blocks;
+  while (limit && join(kept).length > limit) {
+    const index = kept.map(([, droppable]) => droppable).lastIndexOf(true);
+    if (index === -1) break;
+    kept = kept.filter((_, i) => i !== index);
+  }
+  return join(kept);
+}
+
+export function buildPrompt(job, output, {usesReferences = true, compact = false, limit = 0} = {}) {
   const rules = MODES[job.mode] || {};
   const spec = output.angle === 'CUSTOM' ? {move: output.custom} : CAMERA[output.angle] || {move: ''};
   const direction = job.mode !== 'GENERATIVE_ANGLE' && output.custom.trim() ? `Direction for this output: ${output.custom.trim()}` : '';
@@ -185,7 +230,7 @@ export function buildPrompt(job, output, {usesReferences = true, compact = false
     job.notes ? `Additional session instructions: ${job.notes}` : '',
   ].filter(Boolean).join('\n\n');
 
-  if (compact) return compactPrompt(job, output, rules);
+  if (compact) return compactPrompt(job, output, rules, limit);
 
   const kind = rules.subject || 'same';
   // Order matters. The camera move and the identity locks lead, so they survive

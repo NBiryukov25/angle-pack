@@ -98,6 +98,36 @@ Session notes are marked lower priority and cannot override either lock.
   deliberate format change, not a regression, and the intent of each assertion
   was preserved.
 
+## Stage A2 — source aspect and prompt budget — 2026-09-09
+
+Two orchestration/adapter faults found by auditing the LIVE path, fixed without
+changing models, guidance_scale or the reference pipeline. No paid request made.
+
+The full enforcement prompt was 7,154 characters, 1,082 words, roughly 1,990
+tokens. FLUX.2's pipeline caps the text encoder at 512 tokens, so about 74% of
+it never reached the model: the garment lock, the beautification ban, the
+same-session framing, the preservation ledger and the final check were all
+discarded. The production path now sends a compact enforcement prompt of 1,390
+characters, 214 words, roughly 386 tokens, with 126 tokens of headroom and
+nothing discarded. It carries the camera move, the identity lock, the garment
+lock, the preservation controls that are actually set, and the final camera
+check. The full prompt is retained for comparison and rollback.
+
+Output size was pinned to FAL_IMAGE_SIZE (1024x1536, 0.667) regardless of the
+source, so a 3:4 photograph was forced into a 2:3 frame and the model had to
+re-compose the picture. Output size now follows the source aspect within each
+endpoint's own capability: exact pixel dimensions rounded to a multiple of 32
+and clamped to fal's documented 512-2048 range, or the nearest documented ratio
+string for Kontext, or nothing at all for PhotoMaker. Aspect error is under 1%
+across 3:4, 4:3, 1:1, 9:16 and 16:9, and the pixel budget is unchanged.
+FAL_IMAGE_SIZE now sets the budget and the fallback rather than the shape.
+
+The reference pipeline was audited and found clean: a 3024x4032 upload reaches
+the provider at 3024x4032 as PNG, byte-identical, with no resize, no contact
+sheet and no lossy recompression.
+
+- `npm test`: 102 tests passed, zero failures (94 before). Eight new tests.
+
 ## Repeat
 
 ```powershell

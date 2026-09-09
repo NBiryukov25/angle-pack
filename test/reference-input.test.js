@@ -109,7 +109,7 @@ test('the job store picks the prompt from the resolved model, not the mode',asyn
   const outputs=[{angle:'LEFT_3Q',framing:'WAIST'},{angle:'LEFT_3Q',framing:'WAIST',model:'fal-ai/wan/v2.2-a14b/text-to-image'}];
   const job=await finish(store,(await submit(spec({mode:'MODEL_COMPARISON',execution:'LIVE',outputs}))).body.id);
   assert.equal(job.status,'complete');
-  assert.match(job.outputs[0].prompt,/reference photographs as evidence/,'the image model keeps the full prompt');
+  assert.match(job.outputs[0].prompt,/SAME PERSON as the reference/,'the image model keeps the reference-aware prompt');
   assert.match(job.outputs[1].prompt,/No reference photograph is sent/,'the text model gets the reference-free one');
   assert.equal(job.outputs[1].generationParameters.usesReferences,false);
 });

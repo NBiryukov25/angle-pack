@@ -99,6 +99,29 @@ export const MODELS = {
 
 export const MODEL_IDS = Object.keys(MODELS);
 
+// The aspect ratios Kontext accepts; it takes no pixel dimensions.
+export const KONTEXT_RATIOS = ['21:9','16:9','4:3','3:2','1:1','2:3','3:4','9:16','9:21'];
+
+const clamp32 = n => Math.max(512, Math.min(2048, Math.round(n / 32) * 32));
+const nearestRatio = aspect => KONTEXT_RATIOS.reduce((best, ratio) => {
+  const [w, h] = ratio.split(':').map(Number);
+  const distance = Math.abs(Math.log(aspect) - Math.log(w / h));
+  return distance < best.distance ? {ratio, distance} : best;
+}, {ratio: '1:1', distance: Infinity}).ratio;
+
+// Output size follows the SOURCE aspect rather than a fixed configured frame.
+// Forcing a 3:4 photograph into a 2:3 output makes the model re-compose the
+// picture, and re-composition is exactly when identity drifts. FAL_IMAGE_SIZE
+// now sets the pixel budget and the fallback, not the shape.
+export function resolveOutputSize(model, aspect, fallback) {
+  if (model.sizing === 'none') return {};
+  const ratio = Number.isFinite(aspect) && aspect > 0 ? aspect : fallback.width / fallback.height;
+  if (model.sizing === 'aspect') return {aspect: nearestRatio(ratio)};
+  const budget = fallback.width * fallback.height;
+  const width = clamp32(Math.sqrt(budget * ratio));
+  return {width, height: clamp32(width / ratio)};
+}
+
 // Identity survives an image-to-image pass only at a low denoising strength, so
 // the level is taken from how hard the operator asked for the face to be kept.
 export function identityStrength(model, preservation = {}) {

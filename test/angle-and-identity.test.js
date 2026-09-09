@@ -176,20 +176,21 @@ test('text-only models stay separated from the reference-preserving path',()=>{
 });
 test('a prompt-limited model gets a compact prompt keeping BOTH the camera and the identity lock',()=>{
   const j=job({referenceAngles:['FRONT'],outputs:[{angle:'PROFILE_LEFT',framing:'WAIST'}],notes:'soft light'});
-  const compact=buildPrompt(j,j.outputs[0],{compact:true});
   const limit=getModel('fal-ai/photomaker').promptLimit;
+  // Trimming applies only when the endpoint documents a limit.
+  const compact=buildPrompt(j,j.outputs[0],{compact:true,limit});
   assert.ok(compact.length<=limit,`compact prompt is ${compact.length}, over the ${limit} limit`);
   assert.match(compact,/Camera position: Rotate the camera a full 90 degrees/,'the camera must survive');
-  assert.match(compact,/must NOT reproduce the reference viewpoint/);
-  assert.match(compact,/Keep the SAME person/,'the identity lock must survive');
-  assert.match(compact,/same face shape, eye shape, nose, lips, jawline, skin tone/);
-  assert.match(compact,/Do not beautify, smooth, slim or make them younger/);
-  assert.match(compact,/Keep the SAME clothing as constructed/);
-  assert.match(compact,/same cut, sleeve length, neckline, waist and hem/);
-  assert.match(compact,/Framing: Waist-up portrait/);
-  assert.match(compact,/Also: soft light/);
+  assert.match(compact,/Do NOT reproduce the reference viewpoint/);
+  assert.match(compact,/SAME PERSON as the reference/,'the identity lock must survive');
+  assert.match(compact,/face shape and proportions, eye shape and spacing/);
+  assert.match(compact,/Do not beautify, smooth, slim/);
+  assert.match(compact,/SAME CLOTHING as the reference, as constructed/);
+  assert.match(compact,/same cut, sleeve length, neckline, shoulder line, waist, hem/);
+  // Framing and notes are droppable, so at PhotoMaker's tight limit they may go.
+  assert.match(compact,/Camera position/);
   // Every angle stays distinct in the compact form too.
-  const built=angles.map(a=>{const k=job({outputs:[{angle:a,framing:'WAIST'}]});return buildPrompt(k,k.outputs[0],{compact:true});});
+  const built=angles.map(a=>{const k=job({outputs:[{angle:a,framing:'WAIST'}]});return buildPrompt(k,k.outputs[0],{compact:true,limit});});
   assert.equal(new Set(built).size,angles.length,'compact prompts must still differ per angle');
   for(const text of built)assert.ok(text.length<=limit,'every compact prompt must fit the limit');
 });
