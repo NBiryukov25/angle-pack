@@ -40,7 +40,7 @@ test('Multi-Reference synthesises one subject from every reference',async()=>{
   assert.match(text,/MULTI-REFERENCE SYNTHESIS/);
   assert.match(text,/SAME subject/);
   assert.match(text,/Direction for this output: walking outside at golden hour/);
-  assert.match(text,/Camera position: Move the camera approximately 45 degrees/);
+  assert.match(text,/Camera position: Rotate the camera approximately 45 degrees/);
   const {submit,store}=await setup();
   assert.equal((await submit(spec({mode:'MULTI_REFERENCE'}),[fixture])).status,400,'one photograph is not multi-reference');
   const job=await finish(store,(await submit(spec({mode:'MULTI_REFERENCE'}))).body.id);
@@ -96,7 +96,7 @@ test('every generative mode still produces one prompt with the preservation cont
       ? spec({mode,outputs:[out(),out({model:'fal-ai/qwen-image-edit-plus'})]})
       : spec({mode,outputs:[out(extras)]}));
     const text=buildPrompt(parsed,parsed.outputs[0]);
-    assert.match(text,/PRESERVE_FACE: HIGH/,`${mode} preservation`);
+    assert.match(text,/PRESERVE_FACE \(HIGH, identity\)/,`${mode} preservation`);
     assert.match(text,/Produce ONE photograph/,`${mode} single output`);
     assert.match(text,/Reference view labels/,`${mode} reference labels`);
     assert.ok(text.length>500,`${mode} prompt looks truncated`);

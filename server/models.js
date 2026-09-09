@@ -12,6 +12,13 @@
 //             string · 'none' the endpoint has no output-size control
 //   maxImages how many separate image inputs the endpoint accepts. Extra
 //             reference views are merged into one labelled contact sheet.
+//   negative  the endpoint documents a negative_prompt field, so identity and
+//             garment prohibitions can be sent as a hard exclusion list rather
+//             than relying on prose alone. Endpoints without one are not
+//             weaker: every prohibition is also stated in the positive prompt.
+//   strength  image-to-image denoising. Sent only where documented; derived
+//             from the FACE preservation level, because a high value redraws
+//             the subject and destroys the identity the reference establishes.
 
 export const DEFAULT_MODEL = 'fal-ai/flux-2/edit';
 
@@ -30,7 +37,8 @@ export const MODELS = {
     label:'FLUX.2 [dev] Edit', family:'FLUX', kind:'edit', sizing:'dimensions', maxImages:4,
     docs:'https://fal.ai/models/fal-ai/flux-2/edit/api',
     note:'Default. Multi-reference photo edit, up to four separate image inputs.',
-    build:({prompt,urls,width,height})=>({prompt,image_urls:urls,image_size:{width,height},num_images:1,output_format:'png',enable_safety_checker:true}),
+    guidance:3.5,
+    build:({prompt,urls,width,height,guidance})=>({prompt,image_urls:urls,image_size:{width,height},num_images:1,output_format:'png',enable_safety_checker:true,guidance_scale:guidance}),
   },
   'fal-ai/flux-2-pro/edit': {
     label:'FLUX.2 [pro] Edit', family:'FLUX', kind:'edit', sizing:'dimensions', maxImages:4,
@@ -42,47 +50,61 @@ export const MODELS = {
     label:'FLUX.1 Kontext [max] Multi', family:'FLUX', kind:'edit', sizing:'aspect', maxImages:4,
     docs:'https://fal.ai/models/fal-ai/flux-pro/kontext/max/multi/api',
     note:'Kontext multi-image edit. Output size is an aspect ratio, not exact pixels.',
-    build:({prompt,urls,aspect})=>({prompt,image_urls:urls,aspect_ratio:aspect,num_images:1,output_format:'png',safety_tolerance:'2'}),
+    guidance:4,
+    build:({prompt,urls,aspect,guidance})=>({prompt,image_urls:urls,aspect_ratio:aspect,num_images:1,output_format:'png',safety_tolerance:'2',guidance_scale:guidance}),
   },
   'fal-ai/qwen-image-edit-plus': {
     label:'Qwen Image Edit Plus', family:'Qwen', kind:'edit', sizing:'dimensions', maxImages:4,
     docs:'https://fal.ai/models/fal-ai/qwen-image-edit-plus/api',
     note:'Qwen multi-image edit. Accepts several reference views in one request.',
-    build:({prompt,urls,width,height})=>({prompt,image_urls:urls,image_size:{width,height},num_images:1,output_format:'png',enable_safety_checker:true,acceleration:'regular'}),
+    negative:true,
+    build:({prompt,negative,urls,width,height})=>({prompt,negative_prompt:negative,image_urls:urls,image_size:{width,height},num_images:1,output_format:'png',enable_safety_checker:true,acceleration:'regular'}),
   },
   'fal-ai/qwen-image-edit': {
     label:'Qwen Image Edit', family:'Qwen', kind:'edit', sizing:'dimensions', maxImages:1,
     docs:'https://fal.ai/models/fal-ai/qwen-image-edit/api',
     note:'Single-image Qwen edit. Extra reference views arrive as one contact sheet.',
-    build:({prompt,urls,width,height})=>({prompt,image_url:urls[0],image_size:{width,height},num_images:1,output_format:'png',enable_safety_checker:true,acceleration:'regular'}),
+    negative:true,
+    build:({prompt,negative,urls,width,height})=>({prompt,negative_prompt:negative,image_url:urls[0],image_size:{width,height},num_images:1,output_format:'png',enable_safety_checker:true,acceleration:'regular'}),
   },
   'fal-ai/qwen-image': {
     label:'Qwen Image (text to image)', family:'Qwen', kind:'text', sizing:'dimensions', maxImages:0,
     docs:'https://fal.ai/models/fal-ai/qwen-image/api',
     note:'Text to image only. Your reference photographs are NOT sent to this endpoint.',
-    build:({prompt,width,height})=>({prompt,image_size:{width,height},num_images:1,output_format:'png',enable_safety_checker:true}),
+    negative:true,
+    build:({prompt,negative,width,height})=>({prompt,negative_prompt:negative,image_size:{width,height},num_images:1,output_format:'png',enable_safety_checker:true}),
   },
   'fal-ai/wan/v2.2-a14b/image-to-image': {
     label:'WAN 2.2 A14B Image to Image', family:'WAN', kind:'edit', sizing:'dimensions', maxImages:1,
     docs:'https://fal.ai/models/fal-ai/wan/v2.2-a14b/image-to-image/api',
     note:'Single-image WAN redraw. strength 0.5 keeps roughly half of the source.',
-    build:({prompt,urls,width,height})=>({prompt,image_url:urls[0],image_size:{width,height},strength:0.5,image_format:'png',enable_safety_checker:true,enable_output_safety_checker:true}),
+    negative:true, strength:{HIGH:0.35,MEDIUM:0.5,OFF:0.7},
+    build:({prompt,negative,urls,width,height,strength})=>({prompt,negative_prompt:negative,image_url:urls[0],image_size:{width,height},strength,image_format:'png',enable_safety_checker:true,enable_output_safety_checker:true}),
   },
   'fal-ai/wan/v2.2-a14b/text-to-image': {
     label:'WAN 2.2 A14B (text to image)', family:'WAN', kind:'text', sizing:'dimensions', maxImages:0,
     docs:'https://fal.ai/models/fal-ai/wan/v2.2-a14b/text-to-image/api',
     note:'Text to image only. Your reference photographs are NOT sent to this endpoint.',
-    build:({prompt,width,height})=>({prompt,image_size:{width,height},enable_safety_checker:true,enable_output_safety_checker:true}),
+    negative:true,
+    build:({prompt,negative,width,height})=>({prompt,negative_prompt:negative,image_size:{width,height},enable_safety_checker:true,enable_output_safety_checker:true}),
   },
   'fal-ai/photomaker': {
     label:'PhotoMaker (identity)', family:'PhotoMaker', kind:'archive', sizing:'none', maxImages:5, promptLimit:900,
     docs:'https://fal.ai/models/fal-ai/photomaker/api',
     note:'Identity model. References upload as one ZIP archive; the endpoint has no output-size control and returns roughly square images.',
-    build:({prompt,archiveUrl})=>({image_archive_url:archiveUrl,prompt:`${PHOTOMAKER_TRIGGER} ${prompt}`,base_pipeline:'photomaker',style:'Photographic',num_images:1,style_strength:20}),
+    negative:true,
+    build:({prompt,negative,archiveUrl})=>({image_archive_url:archiveUrl,prompt:`${PHOTOMAKER_TRIGGER} ${prompt}`,negative_prompt:negative,base_pipeline:'photomaker',style:'Photographic',num_images:1,style_strength:15}),
   },
 };
 
 export const MODEL_IDS = Object.keys(MODELS);
+
+// Identity survives an image-to-image pass only at a low denoising strength, so
+// the level is taken from how hard the operator asked for the face to be kept.
+export function identityStrength(model, preservation = {}) {
+  if (!model.strength) return undefined;
+  return model.strength[preservation.FACE] ?? model.strength.MEDIUM;
+}
 
 export function getModel(id) {
   const model = MODELS[id];
@@ -95,7 +117,7 @@ export function getModel(id) {
 export function modelCatalog() {
   return MODEL_IDS.map(id => {
     const m = MODELS[id];
-    return {id,label:m.label,family:m.family,kind:m.kind,sizing:m.sizing,maxImages:m.maxImages,usesReferences:m.kind!=='text',exactSize:m.sizing==='dimensions',note:m.note,docs:m.docs};
+    return {id,label:m.label,family:m.family,kind:m.kind,sizing:m.sizing,maxImages:m.maxImages,usesReferences:m.kind!=='text',exactSize:m.sizing==='dimensions',negativePrompt:!!m.negative,note:m.note,docs:m.docs};
   });
 }
 

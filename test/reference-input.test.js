@@ -88,7 +88,7 @@ test('a text-only model receives a prompt that never mentions references',()=>{
   for(const forbidden of [/reference photographs as evidence/i,/Use every reference/i,/PRESERVE_/,/Reference view labels/i,/from the references/i])
     assert.doesNotMatch(text,forbidden,`${forbidden} must not reach an endpoint with no image input`);
   assert.match(text,/No reference photograph is sent to this endpoint/);
-  assert.match(text,/Camera position: Move the camera approximately 45 degrees/,'the requested view survives');
+  assert.match(text,/Camera position: Rotate the camera approximately 45 degrees/,'the requested view survives');
   assert.match(text,/Requested framing: Waist-up portrait/);
   assert.match(text,/Produce ONE photograph/);
   const withReferences=buildPrompt(job,job.outputs[0]);

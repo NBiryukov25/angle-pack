@@ -61,6 +61,43 @@ surfaced text is capped at 300 characters.
 
 - `npm test`: 77 tests passed, zero failures (74 before). No paid request was made.
 
+## Angle enforcement and identity consistency — 2026-09-09
+
+Two reported faults were reproduced as measurements on the prompt the pipeline
+actually emits, then fixed. No paid fal.ai request was made.
+
+Angle, before: changing the angle changed one paragraph of sixteen, 4.9% of the
+prompt. The camera line sat at paragraph four. Ten paragraphs, 68.7% of the
+prompt, told the model to keep things the same, including
+"PRESERVE_BACKGROUND: HIGH ... do not redesign because the camera moved", which
+contradicts the camera move directly. Nothing forbade returning the original
+viewpoint. PhotoMaker lost the camera instruction entirely, because its 900
+character limit trimmed on paragraph boundaries and the camera line fell past it.
+
+Angle, after: three paragraphs of twenty-six differ, 12.1% of the prompt, the
+camera block leads at paragraph one and is restated in a final check, the
+original viewpoint is explicitly forbidden, and crop, mirror, rotate and warp
+are named as failures. Every one of the twelve angles emits a distinct
+instruction naming rotation, height and the visible evidence of the move.
+
+Consistency, before: HIGH and OFF preservation differed by 24 characters out of
+2,332, roughly one percent, so the control was close to cosmetic. Every
+attribute got the same generic sentence, so identity carried no more weight than
+photographic style. Eye shape, nose, lips, jawline, neckline, hem, sleeves and
+any prohibition on beautification, age change or ethnicity drift were absent.
+
+Consistency, after: HIGH and OFF differ by 963 characters. An identity lock and
+a garment lock name the specific features and garment construction and declare
+the reference authoritative. Beautification, idealisation, slimming, age change
+and ethnicity drift are prohibited by name. Preservation attributes are classed
+identity or scene so scene preservation no longer cancels the camera move.
+Session notes are marked lower priority and cannot override either lock.
+
+- `npm test`: 94 tests passed, zero failures (78 before this work).
+- Six existing assertions were updated to the new prompt format; each was a
+  deliberate format change, not a regression, and the intent of each assertion
+  was preserved.
+
 ## Repeat
 
 ```powershell

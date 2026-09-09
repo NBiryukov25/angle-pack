@@ -51,7 +51,7 @@ test('outpaint creates equal-size RGBA canvas and mask with editable margins',as
 });
 test('prompt requires true camera reconstruction and all references',()=>{
   const job=jobSchema.parse(spec());const prompt=buildPrompt(job,job.outputs[0]);
-  assert.match(prompt,/genuinely new virtual camera position/);assert.match(prompt,/Use every reference/);assert.match(prompt,/anatomical left/);assert.match(prompt,/PRESERVE_FACE: HIGH/);
+  assert.match(prompt,/genuinely new virtual camera position/);assert.match(prompt,/Use every reference/);assert.match(prompt,/SUBJECT'S OWN LEFT/);assert.match(prompt,/PRESERVE_FACE \(HIGH, identity\)/);
 });
 test('fal adapter uploads all evidence in four inputs and submits exactly one image',async()=>{
   const transport=fakeFal(fixture,{onSubmit:(input,options)=>{assert.equal(input.image_urls.length,4);assert.equal(input.num_images,1);assert.equal(input.output_format,'png');assert.equal(options.headers.Authorization,'Key test-only');assert.match(input.prompt,/contact sheet/);assert.equal('mask' in input,false);}});
