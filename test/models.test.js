@@ -46,14 +46,17 @@ test('the browser catalog exposes only descriptive fields',()=>{
   const serialized=JSON.stringify(catalog);
   assert.ok(!serialized.includes('function'));
   assert.doesNotMatch(serialized,/apiKey|FAL_KEY|password/i);
-  for(const entry of catalog){for(const key of Object.keys(entry))assert.ok(['id','label','family','kind','sizing','maxImages','usesReferences','exactSize','note','docs'].includes(key),`unexpected catalog field ${key}`);}
+  for(const entry of catalog){for(const key of Object.keys(entry))assert.ok(['id','label','family','kind','sizing','maxImages','usesReferences','exactSize','negativePrompt','note','docs'].includes(key),`unexpected catalog field ${key}`);}
   assert.deepEqual([...new Set(catalog.map(m=>m.family))].sort(),['FLUX','PhotoMaker','Qwen','WAN']);
   for(const family of ['FLUX','Qwen','WAN'])assert.ok(catalog.filter(m=>m.family===family).length>=2,`${family} needs more than one variant`);
   assert.ok(catalog.filter(m=>!m.usesReferences).every(m=>/NOT sent/.test(m.note)),'text-only models must warn that references are not sent');
 });
 test('the default FLUX.2 payload is unchanged by the registry refactor',async()=>{
   const {input,result}=await submitted('fal-ai/flux-2/edit',Array(5).fill(fixture));
-  assert.deepEqual(Object.keys(input).sort(),['enable_safety_checker','image_size','image_urls','num_images','output_format','prompt']);
+  // guidance_scale is sent deliberately: FLUX.2 documents it and a higher value
+  // is what makes the camera instruction actually followed.
+  assert.deepEqual(Object.keys(input).sort(),['enable_safety_checker','guidance_scale','image_size','image_urls','num_images','output_format','prompt']);
+  assert.equal(input.guidance_scale,3.5);
   assert.equal(input.image_urls.length,4);assert.equal(input.num_images,1);assert.equal(input.output_format,'png');
   assert.deepEqual(input.image_size,{width:1024,height:1536});
   assert.match(input.prompt,/contact sheet/);

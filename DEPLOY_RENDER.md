@@ -105,6 +105,35 @@ so a text-to-image endpoint is refused for it at submission and at
 regeneration. Generative Angle and Model Comparison permit one, since comparing
 a pure text-to-image result against the edit models is a fair question to ask.
 
+## Angle enforcement and reference consistency
+
+The camera instruction leads the prompt, names the rotation and height, states
+the visible evidence that proves the camera moved, and forbids reproducing the
+reference viewpoint (unless the requested angle is the labelled reference view).
+Cropping, mirroring, rotating and perspective-warping are named as failures.
+
+Identity and garments are locked separately from the scene. Preservation
+attributes are classed in public/presets.js: FACE, BODY, HAIR, OUTFIT and
+ACCESSORIES are identity, and must not change at all; BACKGROUND, LIGHTING and
+PHOTO_STYLE are scene, and must stay the same subject matter while being
+re-rendered for the new camera position. That distinction is what stops
+"retain the background" from cancelling "move the camera", which is what a
+single generic preservation sentence used to do.
+
+Endpoints documenting a negative_prompt (both Qwen edit endpoints, Qwen Image,
+both WAN endpoints and PhotoMaker) receive the prohibitions as a hard exclusion
+list scaled to the preservation levels. Endpoints without one are not weaker:
+every prohibition is also stated in the positive prompt. FLUX.2 dev and Kontext
+document guidance_scale and are sent a raised value for prompt adherence. WAN
+image-to-image derives its denoising strength from the FACE preservation level
+(HIGH 0.35, MEDIUM 0.5, OFF 0.7) instead of the previous fixed 0.5, which
+half-redrew the subject. PhotoMaker, which documents a short prompt, receives a
+purpose-built compact prompt carrying the camera move and both locks rather than
+a truncated long one.
+
+Session instructions are marked lower priority and explicitly cannot change the
+camera position or weaken the identity and garment locks.
+
 public/presets.js holds that table, shared byte-for-byte with the frontend, and
 the schema, the prompt builder and the browser controls all read it. Combined
 Images and Attribute Combine drop the "same subject" preamble that would

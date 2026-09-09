@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, rename, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import sharp from 'sharp';
-import { buildPrompt } from './prompts.js';
+import { buildPrompt, buildNegativePrompt } from './prompts.js';
 import { MODES } from '../public/presets.js';
 import { outputIssues } from './schema.js';
 import { normalizeReference, cropImage, outpaintInputs, mockImage, editImage, referenceBuffers } from './imaging.js';
@@ -123,7 +123,10 @@ export class JobStore {
           } else {
             // Resolved here so an unknown saved model fails one output, not the session.
             const model=getModel(modelId);
-            out.prompt=buildPrompt(job,out,{usesReferences:model.kind!=='text'});
+            const usesReferences=model.kind!=='text';
+            // A model with a documented prompt limit gets the compact form.
+            out.prompt=buildPrompt(job,out,{usesReferences,compact:!!model.promptLimit});
+            out.negativePrompt=model.negative?buildNegativePrompt(job,{usesReferences}):null;
             let inputs=buffers,mask;
             if (job.mode==='OUTPAINT_ZOOM') {
               const padded=await outpaintInputs(buffers[out.sourceIndex],out,job.config.size);
@@ -138,7 +141,7 @@ export class JobStore {
             await this.persist(job);
             if (job.execution==='MOCK') buffer=await mockImage(buffers[out.sourceIndex],out,job.mode,job.config.size,model.label);
             else {
-              const result=await editImage({...this.config,...job.config,model:model.id},inputs,out.prompt,mask,this.transport,async progress=>{out.providerProgress=progress.phase;if(progress.requestId)out.requestId=progress.requestId;await this.persist(job);});
+              const result=await editImage({...this.config,...job.config,model:model.id},inputs,out.prompt,mask,this.transport,async progress=>{out.providerProgress=progress.phase;if(progress.requestId)out.requestId=progress.requestId;await this.persist(job);},{negativePrompt:out.negativePrompt,preservation:job.preservation});
               buffer=result.buffer;out.requestId=result.requestId;out.usage=result.usage;out.returnedParameters=result.returned;out.generationParameters.inputMapping=result.returned.inputMapping;out.generationParameters.inputImageCount=result.returned.inputCount;
             }
           }
