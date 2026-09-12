@@ -128,6 +128,33 @@ sheet and no lossy recompression.
 
 - `npm test`: 102 tests passed, zero failures (94 before). Eight new tests.
 
+## Segmind provider layer — 2026-09-12
+
+Segmind becomes the default provider; fal.ai remains fully available as a
+fallback. No paid or live request was made against either provider; Segmind is
+exercised through a fake transport.
+
+Both Segmind endpoints were transcribed from their own API pages rather than
+guessed. Authentication is the x-api-key header. Neither Qwen Image Edit Plus
+nor Next Scene documents negative_prompt, steps or guidance, so none is sent;
+seed, quality, image_format, aspect_ratio and base64 are. Both accept three
+image fields, so a fourth reference is contact-sheeted rather than dropped.
+
+Segmind has no asset store in our stack and our own file routes require
+authentication, so there is no URL to hand it. Its image fields accept a base64
+payload in the JSON body, which is the documented alternative, so references
+travel inline as the exact normalized PNG bytes. A reference is only reduced if
+the encoded body would exceed 6 MB, in which case the longest edge is capped at
+2048 with the aspect preserved exactly and the manifest records it.
+
+Qwen Image Edit Plus documents aspect_ratio "match_input_image", so the A2
+source-aware behaviour is delegated to the endpoint. Next Scene has no such
+value and snaps to the nearest of its own documented ratios.
+
+- `npm test`: 115 tests passed, zero failures (102 before). Thirteen new tests.
+- Existing fal.ai tests were pinned to an explicit fal model rather than relying
+  on the default, which now belongs to a different provider.
+
 ## Repeat
 
 ```powershell

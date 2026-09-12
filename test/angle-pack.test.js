@@ -26,7 +26,7 @@ async function setup(overrides={},transport=()=>{throw new Error('Unexpected API
 async function finish(store,id){for(let i=0;i<300;i++){if(!store.active)return store.get(id);await new Promise(r=>setTimeout(r,20));}throw new Error('Job did not finish');}
 
 test('defaults disable live mode and use the centrally configured current model',()=>{
-  const c=getConfig({});assert.equal(c.mockOnly,true);assert.equal(c.model,'fal-ai/flux-2/edit');assert.equal(c.quality,'standard');
+  const c=getConfig({});assert.equal(c.mockOnly,true);assert.equal(c.model,'segmind/qwen-image-edit-plus');assert.equal(c.provider,'segmind');assert.equal(c.quality,'standard');
 });
 test('automatic packs have distinct views and use reference labels to avoid repetitions',()=>{
   assert.deepEqual(autoPack(5).map(o=>o.angle),['LEFT_3Q','RIGHT_3Q','PROFILE_RIGHT','REAR_3Q_LEFT','HIGH']);
@@ -55,11 +55,11 @@ test('prompt requires true camera reconstruction and all references',()=>{
 });
 test('fal adapter uploads all evidence in four inputs and submits exactly one image',async()=>{
   const transport=fakeFal(fixture,{onSubmit:(input,options)=>{assert.equal(input.image_urls.length,4);assert.equal(input.num_images,1);assert.equal(input.output_format,'png');assert.equal(options.headers.Authorization,'Key test-only');assert.match(input.prompt,/contact sheet/);assert.equal('mask' in input,false);}});
-  const result=await editImage({...getConfig({}),mockOnly:false,apiKey:'test-only'},Array(5).fill(fixture),'Test',null,transport);
+  const result=await editImage({...getConfig({}),mockOnly:false,apiKey:'test-only',model:'fal-ai/flux-2/edit'},Array(5).fill(fixture),'Test',null,transport);
   assert.equal(transport.count,1);assert.equal(transport.uploads.length,4);assert.deepEqual(result.returned.inputMapping,[[0],[1],[2],[3,4]]);assert.ok(result.buffer.length);
 });
 test('adapter never retries a provider error or echoes upstream text',async()=>{
-  const transport=fakeFal(fixture,{failAt:1});await assert.rejects(editImage({...getConfig({}),mockOnly:false},[fixture],'test',null,transport),error=>error.message.includes('429')&&!error.message.includes('SECRET'));assert.equal(transport.count,1);
+  const transport=fakeFal(fixture,{failAt:1});await assert.rejects(editImage({...getConfig({}),mockOnly:false,model:'fal-ai/flux-2/edit'},[fixture],'test',null,transport),error=>error.message.includes('429')&&!error.message.includes('SECRET'));assert.equal(transport.count,1);
 });
 test('five-output mock job persists refs, manifest, gallery files, and one-output revision',async()=>{
   const {client,store,token,submit,config}=await setup();
@@ -90,11 +90,11 @@ test('crop mode in LIVE selection still makes no API calls; outpaint mock saves 
 });
 test('fake LIVE outpaint packs canvas and every reference without unsupported mask',async()=>{
   const transport=fakeFal(fixture,{onSubmit:input=>{assert.equal(input.image_urls.length,4);assert.equal('mask' in input,false);}});
-  const {submit,store}=await setup({mockOnly:false,apiKey:'fake'},transport);
+  const {submit,store}=await setup({mockOnly:false,apiKey:'fake',model:'fal-ai/flux-2/edit'},transport);
   const response=await submit(spec({mode:'OUTPAINT_ZOOM',execution:'LIVE'}),Array(5).fill(fixture));const job=await finish(store,response.body.id);assert.equal(job.status,'complete');assert.equal(transport.count,1);assert.deepEqual(job.outputs[0].returnedParameters.inputMapping,[[0],[1],[2],[3,4,5]]);
 });
 test('partial provider failure retains successful outputs and does not retry',async()=>{
-  const transport=fakeFal(fixture,{failAt:2});const {submit,store}=await setup({mockOnly:false,apiKey:'fake'},transport);
+  const transport=fakeFal(fixture,{failAt:2});const {submit,store}=await setup({mockOnly:false,apiKey:'fake',model:'fal-ai/flux-2/edit'},transport);
   const response=await submit(spec({execution:'LIVE',outputs:autoPack(3)}));const job=await finish(store,response.body.id);
   assert.equal(transport.count,3);assert.equal(job.status,'partial');assert.deepEqual(job.outputs.map(o=>o.status),['complete','failed','complete']);
 });

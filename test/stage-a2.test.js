@@ -124,6 +124,6 @@ test('the original reference still reaches the provider unaltered',async()=>{
 test('guidance_scale and the model roster are untouched by Stage A2',()=>{
   assert.equal(getModel('fal-ai/flux-2/edit').guidance,3.5,'A2 must not change guidance_scale');
   assert.equal(getModel('fal-ai/flux-pro/kontext/max/multi').guidance,4);
-  assert.equal(MODEL_IDS.length,9,'A2 must not add or remove models');
-  assert.equal(Object.keys(MODELS)[0],'fal-ai/flux-2/edit','the default model is unchanged');
+  assert.equal(MODEL_IDS.length,11,'nine fal models plus the two Segmind models');
+  assert.equal(Object.keys(MODELS)[0],'fal-ai/flux-2/edit','the fal roster is intact and still leads the registry');
 });

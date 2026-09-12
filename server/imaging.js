@@ -39,7 +39,7 @@ export async function mockImage(buffer, output, mode, size, modelLabel='') {
   const label = `<svg width="${width}" height="${height}"><rect y="${height-150}" width="${width}" height="150" fill="#102722" fill-opacity="0.94"/><text x="40" y="${height-90}" fill="#b9f778" font-family="sans-serif" font-size="32">MOCK · NO AI RECONSTRUCTION</text><text x="40" y="${height-40}" fill="white" font-family="sans-serif" font-size="24">${caption}</text></svg>`;
   return sharp(buffer).resize(width,height,{fit:'contain',background:'#ddd9cd'}).composite([{input:Buffer.from(label)}]).png().toBuffer();
 }
-export { editImage } from './fal.js';
+export { generateImage as editImage } from './provider.js';
 export async function referenceBuffers(folder, refs) {
   return Promise.all(refs.map(ref => readFile(`${folder}/${ref.normalizedFile}`)));
 }

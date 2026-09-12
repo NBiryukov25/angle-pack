@@ -50,9 +50,11 @@ test('health reports the deployed commit and nothing else',async()=>{
   const {app}=await createApp({...getConfig({RENDER:'true',APP_PASSWORD:password,FAL_KEY:'secret-api-test',RENDER_GIT_COMMIT:'1d4206620825c8b836e3334d49c7d26626fb5e2a'}),dataDir:await mkdtemp(path.join(os.tmpdir(),'angle-health-'))});
   const health=await request(app).get('/healthz');
   assert.equal(health.status,200);
-  assert.deepEqual(health.body,{status:'ok',commit:'1d4206620825c8b836e3334d49c7d26626fb5e2a'});
+  assert.equal(health.body.status,'ok');assert.equal(health.body.commit,'1d4206620825c8b836e3334d49c7d26626fb5e2a');
+  assert.equal(health.body.provider,'segmind');assert.equal(health.body.model,'segmind/qwen-image-edit-plus');
+  assert.deepEqual(health.body.providers,{segmind:false,fal:true});
   const serialized=JSON.stringify(health.body);
   for(const secret of ['secret-api-test',password])assert.ok(!serialized.includes(secret));
   const {app:local}=await createApp({...getConfig({}),dataDir:await mkdtemp(path.join(os.tmpdir(),'angle-health-local-'))});
-  assert.deepEqual((await request(local).get('/healthz')).body,{status:'ok',commit:'unknown'},'an unknown commit must not break the health check');
+  assert.equal((await request(local).get('/healthz')).body.commit,'unknown','an unknown commit must not break the health check');
 });

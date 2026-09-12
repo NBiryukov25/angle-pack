@@ -56,7 +56,7 @@ test('a live outpaint on a single-input model sends one image and says so in the
   for(const model of singleInput) {
     let input=null;
     const transport=fakeFal(fixture,{onSubmit:body=>{input=body;}});
-    const {submit,store}=await setup({mockOnly:false,apiKey:'fake'},transport);
+    const {submit,store}=await setup({mockOnly:false,apiKey:'fake',model:'fal-ai/flux-2/edit'},transport);
     const job=await finish(store,(await submit(spec({mode:'OUTPAINT_ZOOM',execution:'LIVE',model}))).body.id);
     assert.equal(job.status,'complete',`${model}: ${job.outputs[0].error||''}`);
     assert.equal(transport.uploads.length,1,`${model} uploads only the canvas`);
@@ -72,7 +72,7 @@ test('a live outpaint on a single-input model sends one image and says so in the
 test('a multi-input outpaint still carries every reference and no omission',async()=>{
   let input=null;
   const transport=fakeFal(fixture,{onSubmit:body=>{input=body;}});
-  const {submit,store}=await setup({mockOnly:false,apiKey:'fake'},transport);
+  const {submit,store}=await setup({mockOnly:false,apiKey:'fake',model:'fal-ai/flux-2/edit'},transport);
   const job=await finish(store,(await submit(spec({mode:'OUTPAINT_ZOOM',execution:'LIVE'}),Array(5).fill(fixture))).body.id);
   assert.equal(job.status,'complete');
   assert.equal(input.image_urls.length,4);
@@ -105,7 +105,7 @@ test('the direction and session notes still reach a text-only model',()=>{
 });
 test('the job store picks the prompt from the resolved model, not the mode',async()=>{
   const transport=fakeFal(fixture,{result:{image:{url:'https://fal.media/result.png'},seed:4}});
-  const {submit,store}=await setup({mockOnly:false,apiKey:'fake'},transport);
+  const {submit,store}=await setup({mockOnly:false,apiKey:'fake',model:'fal-ai/flux-2/edit'},transport);
   const outputs=[{angle:'LEFT_3Q',framing:'WAIST'},{angle:'LEFT_3Q',framing:'WAIST',model:'fal-ai/wan/v2.2-a14b/text-to-image'}];
   const job=await finish(store,(await submit(spec({mode:'MODEL_COMPARISON',execution:'LIVE',outputs}))).body.id);
   assert.equal(job.status,'complete');
@@ -119,7 +119,7 @@ test('every reference-dependent mode rejects a text-only model, at submission an
   const dependent=MODE_KEYS.filter(m=>MODES[m].requiresReferenceInput);
   assert.deepEqual(dependent,['OUTPAINT_ZOOM','MULTI_REFERENCE','COMBINED_IMAGES','ATTRIBUTE_COMBINE']);
   const extras={COMBINED_IMAGES:{custom:'one table'},ATTRIBUTE_COMBINE:{attributes:[{attribute:'FACE',reference:0},{attribute:'OUTFIT',reference:1}]}};
-  const {submit,client,token,store}=await setup({mockOnly:false,apiKey:'fake'});
+  const {submit,client,token,store}=await setup({mockOnly:false,apiKey:'fake',model:'fal-ai/flux-2/edit'});
   for(const mode of dependent) {
     const outputs=[{angle:'FRONT',framing:'WAIST',...(extras[mode]||{})}];
     for(const model of textModels) {
@@ -141,7 +141,7 @@ test('every reference-dependent mode rejects a text-only model, at submission an
   }
 });
 test('modes that do not depend on the references still allow a text-only model',async()=>{
-  const {submit,store}=await setup({mockOnly:false,apiKey:'fake'});
+  const {submit,store}=await setup({mockOnly:false,apiKey:'fake',model:'fal-ai/flux-2/edit'});
   for(const mode of MODE_KEYS.filter(m=>!MODES[m].requiresReferenceInput&&MODES[m].generative)) {
     const outputs=mode==='MODEL_COMPARISON'
       ? [{angle:'FRONT',framing:'WAIST'},{angle:'FRONT',framing:'WAIST',model:textModels[0]}]

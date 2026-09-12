@@ -25,18 +25,29 @@ test('every registered model declares a documented, self-consistent adapter',()=
   for(const id of MODEL_IDS) {
     const model=getModel(id);
     assert.equal(model.id,id);
-    assert.match(model.docs,new RegExp(`^https://fal\\.ai/models/${id.replace(/\//g,'\\/')}/api$`),`${id} must cite its own API documentation`);
+    assert.ok(['fal','segmind'].includes(model.provider),`${id} needs a provider`);
+    const host=model.provider==='fal'?'https://fal.ai/models/':'https://www.segmind.com/models/';
+    assert.ok(model.docs.startsWith(host)&&model.docs.endsWith('/api'),`${id} must cite its own API documentation`);
     assert.ok(['edit','text','archive'].includes(model.kind),`${id} kind`);
-    assert.ok(['dimensions','aspect','none'].includes(model.sizing),`${id} sizing`);
+    assert.ok(['dimensions','aspect','match','none'].includes(model.sizing),`${id} sizing`);
     assert.equal(model.maxImages===0,model.kind==='text',`${id} image capacity must match its kind`);
-    const built=model.build({prompt:'p',urls:['https://fal.media/a.png'],archiveUrl:'https://fal.media/a.zip',width:1024,height:1536,aspect:'2:3'});
+    const built=model.build({prompt:'p',urls:['https://fal.media/a.png'],archiveUrl:'https://fal.media/a.zip',images:{[model.fields?.[0]||'image']:'data:image/png;base64,AA'},width:1024,height:1536,aspect:'2:3'});
     assert.ok(built.prompt.includes('p'),`${id} must send the prompt`);
-    if(model.kind==='edit')assert.ok(built.image_urls||built.image_url,`${id} must send image input`);
+    if(model.provider==='segmind') {
+      assert.ok(Array.isArray(model.fields)&&model.fields.length===model.maxImages,`${id} must declare one image field per supported input`);
+      assert.ok(model.endpoint.startsWith('https://api.segmind.com/v1/'),`${id} needs its documented endpoint`);
+      assert.ok(built[model.fields[0]],`${id} must send its first image field`);
+      for(const absent of ['negative_prompt','steps','num_inference_steps','guidance_scale'])
+        assert.equal(absent in built,false,`${id} does not document ${absent} and must not invent it`);
+    }
+    else if(model.kind==='edit')assert.ok(built.image_urls||built.image_url,`${id} must send image input`);
     if(model.kind==='text')assert.ok(!built.image_urls&&!built.image_url&&!built.image_archive_url,`${id} must send no image input`);
     if(model.kind==='archive')assert.ok(built.image_archive_url,`${id} must send an archive`);
     if(model.sizing==='dimensions')assert.deepEqual(built.image_size,{width:1024,height:1536},`${id} exact size`);
+    if(model.sizing==='match')assert.equal(built.aspect_ratio,'2:3',`${id} passes the resolved ratio through`);
     if(model.sizing==='aspect')assert.equal(built.aspect_ratio,'2:3',`${id} aspect ratio`);
     if(model.sizing==='none')assert.ok(!built.image_size&&!built.aspect_ratio,`${id} has no size control`);
+    if(model.ratios)assert.ok(model.ratios.length>=7,`${id} needs its documented ratio vocabulary`);
   }
   assert.throws(()=>getModel('fal-ai/not-real'),/Unsupported model/);
 });
@@ -46,8 +57,9 @@ test('the browser catalog exposes only descriptive fields',()=>{
   const serialized=JSON.stringify(catalog);
   assert.ok(!serialized.includes('function'));
   assert.doesNotMatch(serialized,/apiKey|FAL_KEY|password/i);
-  for(const entry of catalog){for(const key of Object.keys(entry))assert.ok(['id','label','family','kind','sizing','maxImages','usesReferences','exactSize','negativePrompt','note','docs'].includes(key),`unexpected catalog field ${key}`);}
-  assert.deepEqual([...new Set(catalog.map(m=>m.family))].sort(),['FLUX','PhotoMaker','Qwen','WAN']);
+  for(const entry of catalog){for(const key of Object.keys(entry))assert.ok(['id','provider','label','family','kind','sizing','maxImages','usesReferences','exactSize','negativePrompt','note','docs'].includes(key),`unexpected catalog field ${key}`);}
+  assert.deepEqual([...new Set(catalog.map(m=>m.family))].sort(),['FLUX','PhotoMaker','Qwen','Segmind','WAN']);
+  assert.deepEqual([...new Set(catalog.map(m=>m.provider))].sort(),['fal','segmind']);
   for(const family of ['FLUX','Qwen','WAN'])assert.ok(catalog.filter(m=>m.family===family).length>=2,`${family} needs more than one variant`);
   assert.ok(catalog.filter(m=>!m.usesReferences).every(m=>/NOT sent/.test(m.note)),'text-only models must warn that references are not sent');
 });
@@ -125,7 +137,8 @@ test('contact sheets honour each documented input cap without losing a view',asy
 });
 test('config accepts every registered model and rejects anything else',()=>{
   for(const id of MODEL_IDS)assert.equal(getConfig({FAL_IMAGE_MODEL:id}).model,id);
-  assert.throws(()=>getConfig({FAL_IMAGE_MODEL:'fal-ai/made-up'}),/Unsupported FAL_IMAGE_MODEL/);
+  assert.throws(()=>getConfig({FAL_IMAGE_MODEL:'fal-ai/made-up'}),/Unsupported ANGLE_PACK_MODEL/);
+  assert.throws(()=>getConfig({ANGLE_PACK_MODEL:'nope'}),/Unsupported ANGLE_PACK_MODEL/);
   assert.equal(getConfig({}).model,DEFAULT_MODEL);
   assert.equal(Object.keys(MODELS).length,MODEL_IDS.length);
 });

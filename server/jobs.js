@@ -7,6 +7,7 @@ import { MODES } from '../public/presets.js';
 import { outputIssues } from './schema.js';
 import { normalizeReference, cropImage, outpaintInputs, mockImage, editImage, referenceBuffers } from './imaging.js';
 import { getModel } from './models.js';
+import { providerReady } from './provider.js';
 
 const now = () => new Date().toISOString();
 const modelSlug = id => id.split('/').slice(1).join('-').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase();
@@ -34,7 +35,8 @@ export class JobStore {
   }
   get(id) { const job=this.jobs.get(id); if (!job) throw Object.assign(new Error('Session not found'),{status:404}); return job; }
   assertLive(execution,mode) {
-    if (execution==='LIVE' && mode!=='CROP_ZOOM' && (this.config.mockOnly || !this.config.apiKey)) throw Object.assign(new Error('Live generation is disabled. Set ANGLE_PACK_MOCK=false and FAL_KEY in .env, then restart.'),{status:400});
+    if (execution!=='LIVE' || mode==='CROP_ZOOM') return;
+    if (this.config.mockOnly) throw Object.assign(new Error('Live generation is disabled. Set ANGLE_PACK_MOCK=false, then restart.'),{status:400});
   }
   // Outpaint sends the expanded canvas as an image input, so a text-only
   // endpoint would silently discard the very thing being extended.
@@ -50,18 +52,20 @@ export class JobStore {
       if (issues.length) throw Object.assign(new Error(issues.join('; ')),{status:400});
     }
   }
-  assertModels(mode,ids) {
+  assertModels(mode,ids,execution='MOCK') {
     if (mode==='CROP_ZOOM') return;
     const rules=MODES[mode];
     for (const id of ids) {
       const model=getModel(id);
+      if (execution==='LIVE' && !this.config.mockOnly && !providerReady(this.config,model.provider))
+        throw Object.assign(new Error(`${model.label} runs on ${model.provider}, and no ${model.provider==='segmind'?'SEGMIND_API_KEY':'FAL_KEY'} is configured on the server.`),{status:400});
       if (rules.requiresReferenceInput && model.kind==='text') throw Object.assign(new Error(`${model.label} accepts no image input, so it cannot perform ${rules.label}, which works from your reference photographs. Choose a model that uses them.`),{status:400});
     }
   }
   async create(spec,files) {
     if (this.active) throw Object.assign(new Error('Another job is running. Wait for it to finish.'),{status:409});
     this.assertLive(spec.execution,spec.mode);
-    this.assertModels(spec.mode,[spec.model||this.config.model,...spec.outputs.map(o=>o.model).filter(Boolean)]);
+    this.assertModels(spec.mode,[spec.model||this.config.model,...spec.outputs.map(o=>o.model).filter(Boolean)],spec.execution);
     if (!files.length || files.length>5) throw Object.assign(new Error('Upload 1–5 reference photographs.'),{status:400});
     this.assertReferences(spec.mode,spec.outputs,files.length);
     this.active=true;
@@ -92,7 +96,7 @@ export class JobStore {
     const job=this.get(id); const out=job.outputs[index];
     if (!out) throw Object.assign(new Error('Output not found'),{status:404});
     this.assertLive(spec.execution,job.mode);
-    this.assertModels(job.mode,[spec.output.model||job.config.model]);
+    this.assertModels(job.mode,[spec.output.model||job.config.model],spec.execution);
     this.assertReferences(job.mode,[spec.output],job.references.length);
     this.active=true;
     try {
@@ -143,7 +147,7 @@ export class JobStore {
             await this.persist(job);
             if (job.execution==='MOCK') buffer=await mockImage(buffers[out.sourceIndex],out,job.mode,job.config.size,model.label);
             else {
-              const result=await editImage({...this.config,...job.config,model:model.id},inputs,out.prompt,mask,this.transport,async progress=>{out.providerProgress=progress.phase;if(progress.requestId)out.requestId=progress.requestId;await this.persist(job);},{negativePrompt:out.negativePrompt,preservation:job.preservation});
+              const result=await editImage({...this.config,...job.config,model:model.id,provider:model.provider,endpoint:model.endpoint||job.config.endpoint},inputs,out.prompt,mask,this.transport,async progress=>{out.providerProgress=progress.phase;if(progress.requestId)out.requestId=progress.requestId;await this.persist(job);},{negativePrompt:out.negativePrompt,preservation:job.preservation});
               buffer=result.buffer;out.requestId=result.requestId;out.usage=result.usage;out.returnedParameters=result.returned;out.generationParameters.inputMapping=result.returned.inputMapping;out.generationParameters.inputImageCount=result.returned.inputCount;
             }
           }

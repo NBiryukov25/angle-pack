@@ -5,7 +5,7 @@ import {editImage} from '../server/fal.js';
 import {getConfig} from '../server/config.js';
 
 const fixture=await sharp({create:{width:8,height:8,channels:3,background:'#123456'}}).png().toBuffer();
-const config={...getConfig({}),mockOnly:false,apiKey:'configured-fal-value:123456',password:'configured-app-value'};
+const config={...getConfig({}),mockOnly:false,model:'fal-ai/flux-2/edit',apiKey:'configured-fal-value:123456',password:'configured-app-value'};
 function transport(response){let calls=0;return {upload:async()=> 'https://fal.media/test.png',fetch:async()=>{calls++;return response;},get calls(){return calls;}};}
 
 test('403 logs HTTP context and diagnostic fields, redacts secrets and never resubmits',async t=>{

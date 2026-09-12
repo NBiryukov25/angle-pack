@@ -48,7 +48,7 @@ test('a live comparison calls each model once and files every result separately'
   const endpoints=[];
   const transport=fakeFal(fixture);const rawFetch=transport.fetch;
   transport.fetch=(url,options={})=>{if(options.method==='POST')endpoints.push(url.replace('https://queue.fal.run/',''));return rawFetch(url,options);};
-  const {submit,store,config}=await setup({mockOnly:false,apiKey:'fake'},transport);
+  const {submit,store,config}=await setup({mockOnly:false,apiKey:'fake',model:'fal-ai/flux-2/edit'},transport);
   const job=await finish(store,(await submit(spec({execution:'LIVE'}))).body.id);
   assert.equal(job.status,'complete');
   assert.deepEqual(endpoints,compared,'one request per compared model, in order');
@@ -64,7 +64,7 @@ test('a live comparison calls each model once and files every result separately'
 });
 test('one failing model leaves the other comparisons intact and is not retried',async()=>{
   const transport=fakeFal(fixture,{failAt:2});
-  const {submit,store}=await setup({mockOnly:false,apiKey:'fake'},transport);
+  const {submit,store}=await setup({mockOnly:false,apiKey:'fake',model:'fal-ai/flux-2/edit'},transport);
   const job=await finish(store,(await submit(spec({execution:'LIVE'}))).body.id);
   assert.equal(transport.count,3);
   assert.equal(job.status,'partial');
@@ -72,11 +72,11 @@ test('one failing model leaves the other comparisons intact and is not retried',
   assert.match(job.outputs[1].error,/No automatic resubmission/);
 });
 test('a mock comparison costs nothing and still labels each model',async()=>{
-  const {submit,store}=await setup();
+  const {submit,store}=await setup({model:'fal-ai/flux-2/edit'});
   const job=await finish(store,(await submit(spec())).body.id);
   assert.equal(job.status,'complete');
   assert.deepEqual(job.outputs.map(o=>o.generationParameters.apiRequests),[0,0,0]);
   assert.deepEqual(job.outputs.map(o=>o.generationParameters.modelLabel),['FLUX.2 [dev] Edit','Qwen Image Edit Plus','WAN 2.2 A14B Image to Image']);
   assert.ok(job.outputs.every(o=>o.generatedFilename.startsWith('mock_angle_')));
-  assert.equal(job.comparison[0].model,DEFAULT_MODEL);
+  assert.equal(job.comparison[0].model,'fal-ai/flux-2/edit');
 });
